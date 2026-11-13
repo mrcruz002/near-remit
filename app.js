@@ -8,6 +8,20 @@
   var API = 'https://1click.chaindefuser.com';
   var $ = function (id) { return document.getElementById(id); };
 
+  /* Every API call gets a timeout — on a slow connection a request must
+     fail fast with a clear message instead of hanging the button forever
+     ("Asking solvers…" with nothing happening). */
+  var API_TIMEOUT_MS = 25000;
+  function fetchWithTimeout(url, options) {
+    /* Race the request against a timer: whatever the request does — even
+       if it ignores an abort — the caller gets an answer within 25s. */
+    var timeoutErr = new Error('The request timed out — check your connection and try again.');
+    var timeout = new Promise(function (_, reject) {
+      setTimeout(function () { reject(timeoutErr); }, API_TIMEOUT_MS);
+    });
+    return Promise.race([fetch(url, options), timeout]);
+  }
+
   /* ---------- theme ---------- */
   (function () {
     var btn = $('themeBtn'), label = $('themeLabel');
@@ -323,6 +337,22 @@
 
   /* ---------- stepper ---------- */
   var maxStep = 1;
+  /* When a step changes, bring the new step's card into view — never the
+     step navigation at the top of the page. Scrolling to the nav is what
+     yanked the page up on every button click. Only move when the card is
+     off-screen; if it is already visible, stay exactly where you are. */
+  function scrollStepCardIntoView(n) {
+    var card = $('card' + n);
+    if (!card || typeof card.getBoundingClientRect !== 'function') return;
+    var r = card.getBoundingClientRect();
+    var vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
+    if (r.top >= 0 && r.top < vh) return;
+    var top = ((typeof window !== 'undefined' && window.scrollY) || 0) + r.top - 12;
+    if (top < 0) top = 0;
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: top, behavior: 'smooth' });
+    }
+  }
   function setStep(n, noScroll) {
     maxStep = Math.max(maxStep, n);
     document.querySelectorAll('.step-nav').forEach(function (el) {
@@ -331,8 +361,7 @@
       el.classList.toggle('done', s < n);
     });
     for (var i = 1; i <= 5; i++) $('card' + i).classList.toggle('hidden', i > maxStep);
-    var nav = $('stepsNav');
-    if (!noScroll && nav && typeof nav.scrollIntoView === 'function') nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!noScroll) scrollStepCardIntoView(n);
   }
 
   /* ---------- prices (GET /v0/tokens) ---------- */
@@ -342,7 +371,7 @@
   }
   async function loadPrices() {
     try {
-      var res = await fetch(API + '/v0/tokens');
+      var res = await fetchWithTimeout(API + '/v0/tokens');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var list = await res.json();
       if (Array.isArray(list)) {
@@ -549,7 +578,10 @@
       menu.style.top = top + 'px';
     } catch (e) {}
     $(which === 'from' ? 'fromTokenBtn' : 'toTokenBtn').setAttribute('aria-expanded', 'true');
-    $('tokenSearch').focus();
+    /* Focus the search without moving the page — a plain focus() scrolls
+       the input into view, which yanked the page up when the menu opened. */
+    try { $('tokenSearch').focus({ preventScroll: true }); }
+    catch (e) { $('tokenSearch').focus(); }
   }
   function closeMenu() {
     state.menuFor = null;
@@ -661,7 +693,7 @@
     };
   }
   async function requestQuote(dry) {
-    var res = await fetch(API + '/v0/quote', {
+    var res = await fetchWithTimeout(API + '/v0/quote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(quoteBody(dry)),
@@ -676,9 +708,13 @@
   async function fetchStatus(depositAddress, depositMemo) {
     var url = API + '/v0/status?depositAddress=' + encodeURIComponent(depositAddress);
     if (depositMemo) url += '&depositMemo=' + encodeURIComponent(depositMemo);
-    var res = await fetch(url);
+    var res = await fetchWithTimeout(url);
     var body = await res.json().catch(function () { return {}; });
-    if (!res.ok) throw new Error(body.message || ('Status check failed (HTTP ' + res.status + ').'));
+    if (!res.ok) {
+      var err = new Error(body.message || ('Status check failed (HTTP ' + res.status + ').'));
+      err.httpStatus = res.status;
+      throw err;
+    }
     return body;
   }
   /* Friendly wording when the API simply cannot price a pair. */
@@ -882,6 +918,7 @@
   }
   async function pollOnce() {
     if (!state.tracking) return;
+    var box = state.trackStatusId || 'status5';
     try {
       /* Only send the saved memo when tracking the live quote's own
          deposit address — a looked-up address has no memo of ours. */
@@ -893,17 +930,29 @@
       if (done) {
         stopPolling();
         saveState();
-        if (res.status === 'SUCCESS') showStatus('status5', 'ok', 'Delivered.', 'The recipient got the money. Links above go to the chain explorers.');
-        else if (res.status === 'REFUNDED') showStatus('status5', 'warn', 'Refunded.', 'The swap did not complete — the deposit went back to your refund address, minus the refund fee.');
-        else showStatus('status5', 'err', 'Swap failed.', 'Check the details above; the deposit should be refunded to your address.');
+        if (res.status === 'SUCCESS') showStatus(box, 'ok', 'Delivered.', 'The recipient got the money. Links above go to the chain explorers.');
+        else if (res.status === 'REFUNDED') showStatus(box, 'warn', 'Refunded.', 'The swap did not complete — the deposit went back to your refund address, minus the refund fee.');
+        else showStatus(box, 'err', 'Swap failed.', 'Check the details above; the deposit should be refunded to your address.');
       }
     } catch (e) {
-      showStatus('status5', 'err', 'Status check failed.', String(e && e.message || e) + ' — retrying automatically.');
+      if (e && e.httpStatus === 404) {
+        /* No swap exists for this address — retrying forever cannot help.
+           The usual cause is pasting your own wallet address instead of
+           the deposit address the page gave you in step 4. Stop polling
+           and say so plainly, in the box the lookup came from. */
+        stopPolling();
+        saveState();
+        showStatus(box, 'err', 'No swap found for this address.',
+          'Check you pasted the deposit address from step 4 — the one the page gave you after "Create deposit address" — not your own wallet address. A wallet address has no swap attached to it.');
+      } else {
+        showStatus(box, 'err', 'Status check failed.', String(e && e.message || e) + ' — retrying automatically.');
+      }
     }
   }
-  function startTracking(depositAddress, noScroll) {
+  function startTracking(depositAddress, noScroll, statusId) {
     stopPolling();
     state.tracking = depositAddress;
+    state.trackStatusId = statusId || 'status5';
     setStep(5, noScroll);
     $('trackState').textContent = 'Status: checking…';
     pollOnce();
@@ -923,7 +972,7 @@
       return false;
     }
     hideStatus(statusId);
-    startTracking(a);
+    startTracking(a, false, statusId);
     return true;
   }
   $('btnLookup').onclick = function () { checkSwapAddress($('lookupAddr').value, 'status5'); };
@@ -945,8 +994,7 @@
      the saved swap and start clean. */
   $('btnResumeContinue').onclick = function () {
     $('resumeBanner').classList.add('hidden');
-    var nav = $('stepsNav');
-    if (nav && typeof nav.scrollIntoView === 'function') nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    scrollStepCardIntoView(maxStep);
   };
   $('btnStartOver').onclick = clearSavedSwap;
   /* Deep link: ?track=<depositAddress> opens the tracker for that swap
