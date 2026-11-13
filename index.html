@@ -52,25 +52,63 @@
   <!-- STEP 1 -->
   <section class="card" id="card1">
     <h2><span class="num">01</span> You send</h2>
-    <p class="sub">Choose the route and the amount. The amount is in the token you send — the quote will show what that is worth in dollars.</p>
-    <div class="field">
-      <label for="route">Route — what you send → what they receive</label>
-      <select id="route"></select>
-      <div class="hint" id="routeHint"></div>
+    <p class="sub">Pick the token you send and the token they receive — any token, any supported chain. Type the amount in dollars or in the token itself.</p>
+
+    <div class="amount-mode">
+      <span class="mode-label">Amount in</span>
+      <div class="seg" role="group" aria-label="Amount units">
+        <button type="button" id="modeUsd" class="seg-btn active">$</button>
+        <button type="button" id="modeToken" class="seg-btn">USDC</button>
+      </div>
+      <span class="hint" id="priceNote"></span>
     </div>
-    <div class="field-row">
-      <div class="field" id="amountField">
-        <label for="amount">Amount to send</label>
-        <input id="amount" type="text" inputmode="decimal" value="1" autocomplete="off" spellcheck="false">
-        <div class="hint" id="amountHint">1 USDC on Ethereum</div>
-        <div class="err-text">Enter an amount greater than 0.</div>
+
+    <div class="swap-panels" id="swapPanels">
+      <div class="swap-panel" id="fromPanel">
+        <div class="panel-head"><span>From</span><span class="panel-chain" id="fromChain">Ethereum</span></div>
+        <div class="panel-body">
+          <div class="amount-wrap">
+            <div class="amount-line"><span class="cur-prefix" id="curPrefix">$</span><input id="amount" type="text" inputmode="decimal" value="1" autocomplete="off" spellcheck="false"></div>
+            <div class="amount-sub" id="amountSub">≈ — USDC</div>
+          </div>
+          <button class="token-btn" id="fromTokenBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <span class="token-sym" id="fromTokenSym">USDC</span><span class="chev">⌄</span>
+          </button>
+        </div>
       </div>
-      <div class="field" id="refundField">
-        <label for="refundTo">Your address — for refunds</label>
-        <input id="refundTo" type="text" class="mono" placeholder="0x… (Ethereum / Base) or name.near (NEAR)" autocomplete="off" spellcheck="false">
-        <div class="hint" id="refundHint">If the swap fails, the money comes back here.</div>
-        <div class="err-text" id="refundErr">That address does not look right for this chain.</div>
+
+      <button class="swap-btn" id="btnSwap" type="button" aria-label="Swap direction">↓</button>
+
+      <div class="swap-panel" id="toPanel">
+        <div class="panel-head"><span>To</span><span class="panel-chain" id="toChain">Base</span></div>
+        <div class="panel-body">
+          <div class="amount-wrap">
+            <div class="amount-line"><span class="to-amount" id="toAmount">$0.00</span></div>
+            <div class="amount-sub" id="toAmountSub">≈ 0 — get a quote in step 3</div>
+          </div>
+          <button class="token-btn" id="toTokenBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <span class="token-sym" id="toTokenSym">USDC</span><span class="chev">⌄</span>
+          </button>
+        </div>
       </div>
+
+      <div class="token-menu hidden" id="tokenMenu" role="listbox" aria-label="Choose a token">
+        <input id="tokenSearch" type="text" placeholder="Search tokens or chains…" autocomplete="off" spellcheck="false">
+        <div id="tokenList"></div>
+      </div>
+    </div>
+    <div id="amountErr" style="display:none">Enter an amount greater than 0.</div>
+
+    <div class="quick-row">
+      <span class="muted small">Quick routes:</span>
+      <div class="chips" id="quickChips"></div>
+    </div>
+
+    <div class="field" id="refundField">
+      <label for="refundTo">Your address — for refunds</label>
+      <input id="refundTo" type="text" class="mono" placeholder="0x… (Ethereum / Base) or name.near (NEAR)" autocomplete="off" spellcheck="false">
+      <div class="hint" id="refundHint">If the swap fails, the money comes back here.</div>
+      <div class="err-text" id="refundErr">That address does not look right for this chain.</div>
     </div>
     <div class="row">
       <button class="btn" id="btnNext1" type="button">Continue →</button>
@@ -85,7 +123,7 @@
     <div class="field">
       <label>They receive</label>
       <div class="mono" id="destSummary" style="font-size:15px">USDC on Base</div>
-      <div class="hint">Fixed by the route you picked in step 1.</div>
+      <div class="hint">Fixed by the tokens you picked in step 1.</div>
     </div>
     <div class="field" id="recipientField">
       <label for="recipient">Recipient address</label>

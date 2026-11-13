@@ -1,6 +1,6 @@
 /* NearRemit — cross-chain remittance demo on NEAR Intents (1-Click Swap API).
    No wallet connection, no keys, no sign-up. The page only calls the public
-   1-Click API: GET /v0/tokens (not used — routes are curated below),
+   1-Click API: GET /v0/tokens (live prices + the token list for the picker),
    POST /v0/quote and GET /v0/status. See README.md. */
 (function () {
   'use strict';
@@ -22,49 +22,104 @@
     };
   })();
 
-  /* ---------- routes (assetIds verified live against GET /v0/tokens, 2026-11-13) ---------- */
+  /* ---------- chains ---------- */
   var CHAINS = {
-    eth:  { label: 'Ethereum', kind: 'evm',  explorer: 'https://etherscan.io/tx/' },
-    base: { label: 'Base',     kind: 'evm',  explorer: 'https://basescan.org/tx/' },
-    near: { label: 'NEAR',     kind: 'near', explorer: 'https://explorer.near.org/transactions/' },
+    eth:    { label: 'Ethereum',  kind: 'evm',  explorer: 'https://etherscan.io/tx/' },
+    base:   { label: 'Base',      kind: 'evm',  explorer: 'https://basescan.org/tx/' },
+    near:   { label: 'NEAR',      kind: 'near', explorer: 'https://explorer.near.org/transactions/' },
+    arb:    { label: 'Arbitrum',  kind: 'evm',  explorer: 'https://arbiscan.io/tx/' },
+    op:     { label: 'Optimism',  kind: 'evm',  explorer: 'https://optimistic.etherscan.io/tx/' },
+    bsc:    { label: 'BNB Chain', kind: 'evm',  explorer: 'https://bscscan.com/tx/' },
+    avax:   { label: 'Avalanche', kind: 'evm',  explorer: 'https://snowtrace.io/tx/' },
+    gnosis: { label: 'Gnosis',    kind: 'evm',  explorer: 'https://gnosisscan.io/tx/' },
+    pol:    { label: 'Polygon',   kind: 'evm',  explorer: 'https://polygonscan.com/tx/' },
+    sol:    { label: 'Solana',    kind: 'sol',  explorer: 'https://solscan.io/tx/' },
   };
-  var ROUTES = [
-    { id: 'usdc-eth-usdc-base', label: 'USDC on Ethereum → USDC on Base',
-      origin: { chain: 'eth',  symbol: 'USDC', assetId: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', decimals: 6 },
-      dest:   { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
-      defAmount: '1' },
-    { id: 'usdc-base-usdc-eth', label: 'USDC on Base → USDC on Ethereum',
-      origin: { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
-      dest:   { chain: 'eth',  symbol: 'USDC', assetId: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', decimals: 6 },
-      defAmount: '1' },
-    { id: 'usdc-eth-usdc-near', label: 'USDC on Ethereum → USDC on NEAR',
-      origin: { chain: 'eth',  symbol: 'USDC', assetId: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', decimals: 6 },
-      dest:   { chain: 'near', symbol: 'USDC', assetId: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', decimals: 6 },
-      defAmount: '1' },
-    { id: 'usdc-base-usdc-near', label: 'USDC on Base → USDC on NEAR',
-      origin: { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
-      dest:   { chain: 'near', symbol: 'USDC', assetId: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', decimals: 6 },
-      defAmount: '1' },
-    { id: 'near-usdc-base', label: 'NEAR on NEAR → USDC on Base',
-      origin: { chain: 'near', symbol: 'NEAR', assetId: 'nep141:wrap.near', decimals: 24 },
-      dest:   { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
-      defAmount: '0.3' },
-    { id: 'eth-usdc-base', label: 'ETH on Ethereum → USDC on Base',
-      origin: { chain: 'eth',  symbol: 'ETH',  assetId: 'nep141:eth.omft.near', decimals: 18 },
-      dest:   { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
-      defAmount: '0.001' },
-    { id: 'usdc-base-near', label: 'USDC on Base → NEAR on NEAR',
-      origin: { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
-      dest:   { chain: 'near', symbol: 'NEAR', assetId: 'nep141:wrap.near', decimals: 24 },
-      defAmount: '1' },
+  var CHAIN_ORDER = ['eth', 'base', 'near', 'arb', 'op', 'bsc', 'avax', 'gnosis', 'pol', 'sol'];
+
+  /* ---------- tokens (curated from GET /v0/tokens, verified live 2026-11-13).
+     The API lists ~230 tokens; this is the sensible shortlist — the major
+     tokens on each chain we can take deposits from and pay out to. Prices come
+     from the live API at load time; assetIds and decimals are fixed here. ---------- */
+  var TOKENS = [
+    { chain: 'eth', symbol: 'USDC', assetId: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', decimals: 6 },
+    { chain: 'eth', symbol: 'USDT', assetId: 'nep141:eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near', decimals: 6 },
+    { chain: 'eth', symbol: 'ETH', assetId: 'nep141:eth.omft.near', decimals: 18 },
+    { chain: 'eth', symbol: 'WETH', assetId: 'nep141:eth-0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2.omft.near', decimals: 18 },
+    { chain: 'eth', symbol: 'DAI', assetId: 'nep141:eth-0x6b175474e89094c44da98b954eedeac495271d0f.omft.near', decimals: 18 },
+    { chain: 'eth', symbol: 'WBTC', assetId: 'nep141:eth-0x2260fac5e5542a773aa44fbcfedf7c193bc2c599.omft.near', decimals: 8 },
+    { chain: 'eth', symbol: 'LINK', assetId: 'nep141:eth-0x514910771af9ca656af840dff83e8264ecf986ca.omft.near', decimals: 18 },
+    { chain: 'eth', symbol: 'UNI', assetId: 'nep141:eth-0x1f9840a85d5af5bf1d1762f925bdaddc4201f984.omft.near', decimals: 18 },
+    { chain: 'eth', symbol: 'AAVE', assetId: 'nep141:eth-0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9.omft.near', decimals: 18 },
+    { chain: 'base', symbol: 'USDC', assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6 },
+    { chain: 'base', symbol: 'ETH', assetId: 'nep141:base.omft.near', decimals: 18 },
+    { chain: 'base', symbol: 'WETH', assetId: 'nep141:base-0x4200000000000000000000000000000000000006.omft.near', decimals: 18 },
+    { chain: 'base', symbol: 'cbBTC', assetId: 'nep141:base-0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf.omft.near', decimals: 8 },
+    { chain: 'base', symbol: 'BRETT', assetId: 'nep141:base-0x532f27101965dd16442e59d40670faf5ebb142e4.omft.near', decimals: 18 },
+    { chain: 'near', symbol: 'USDC', assetId: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', decimals: 6 },
+    { chain: 'near', symbol: 'USDT', assetId: 'nep141:usdt.tether-token.near', decimals: 6 },
+    { chain: 'near', symbol: 'NEAR', assetId: 'nep141:wrap.near', decimals: 24 },
+    { chain: 'near', symbol: 'ETH', assetId: 'nep141:eth.bridge.near', decimals: 18 },
+    { chain: 'near', symbol: 'stNEAR', assetId: 'nep141:meta-pool.near', decimals: 24 },
+    { chain: 'near', symbol: 'BTC', assetId: 'nep141:nbtc.bridge.near', decimals: 8 },
+    { chain: 'arb', symbol: 'USDC', assetId: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', decimals: 6 },
+    { chain: 'arb', symbol: 'USDT0', assetId: 'nep141:arb-0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9.omft.near', decimals: 6 },
+    { chain: 'arb', symbol: 'ETH', assetId: 'nep141:arb.omft.near', decimals: 18 },
+    { chain: 'arb', symbol: 'WETH', assetId: 'nep141:arb-0x82af49447d8a07e3bd95bd0d56f35241523fbab1.omft.near', decimals: 18 },
+    { chain: 'arb', symbol: 'ARB', assetId: 'nep141:arb-0x912ce59144191c1204e64559fe8253a0e49e6548.omft.near', decimals: 18 },
+    { chain: 'op', symbol: 'USDC', assetId: 'nep245:v2_1.omni.hot.tg:10_A2ewyUyDp6qsue1jqZsGypkCxRJ', decimals: 6 },
+    { chain: 'op', symbol: 'USDT', assetId: 'nep245:v2_1.omni.hot.tg:10_359RPSJVdTxwTJT9TyGssr2rFoWo', decimals: 6 },
+    { chain: 'op', symbol: 'ETH', assetId: 'nep245:v2_1.omni.hot.tg:10_11111111111111111111', decimals: 18 },
+    { chain: 'op', symbol: 'WETH', assetId: 'nep245:v2_1.omni.hot.tg:10_vLAiSt9KfUGKpw5cD3vsSyNYBn5', decimals: 18 },
+    { chain: 'op', symbol: 'OP', assetId: 'nep245:v2_1.omni.hot.tg:10_vLAiSt9KfUGKpw5cD3vsSyNYBo7', decimals: 18 },
+    { chain: 'bsc', symbol: 'USDC', assetId: 'nep141:bnb-0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d.omdep.near', decimals: 18 },
+    { chain: 'bsc', symbol: 'USDT', assetId: 'nep141:bnb-0x55d398326f99059ff775485246999027b3197955.omdep.near', decimals: 18 },
+    { chain: 'bsc', symbol: 'BNB', assetId: 'nep141:bnb.omdep.near', decimals: 18 },
+    { chain: 'bsc', symbol: 'NEAR', assetId: 'nep141:bnb-0x1fa4a73a3f0133f0025378af00236f3abdee5d63.omdep.near', decimals: 18 },
+    { chain: 'avax', symbol: 'USDC', assetId: 'nep141:avax-0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e.omdep.near', decimals: 6 },
+    { chain: 'avax', symbol: 'USDT', assetId: 'nep141:avax-0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7.omdep.near', decimals: 6 },
+    { chain: 'avax', symbol: 'AVAX', assetId: 'nep141:avax.omdep.near', decimals: 18 },
+    { chain: 'gnosis', symbol: 'USDC', assetId: 'nep141:gnosis-0x2a22f9c3b484c3629090feed35f17ff8f88f76f0.omft.near', decimals: 6 },
+    { chain: 'gnosis', symbol: 'USDT', assetId: 'nep141:gnosis-0x4ecaba5870353805a9f068101a40e0f32ed605c6.omft.near', decimals: 6 },
+    { chain: 'gnosis', symbol: 'xDAI', assetId: 'nep141:gnosis.omft.near', decimals: 18 },
+    { chain: 'gnosis', symbol: 'GNO', assetId: 'nep141:gnosis-0x9c58bacc331c9aa871afd802db6379a98e80cedb.omft.near', decimals: 18 },
+    { chain: 'gnosis', symbol: 'WETH', assetId: 'nep141:gnosis-0x6a023ccd1ff6f2045c3309768ead9e68f978f6e1.omft.near', decimals: 18 },
+    { chain: 'pol', symbol: 'USDC', assetId: 'nep141:pol-0x3c499c542cef5e3811e1192ce70d8cc03d5c3359.omdep.near', decimals: 6 },
+    { chain: 'pol', symbol: 'USDT', assetId: 'nep141:pol-0xc2132d05d31c914a87c6611c10748aeb04b58e8f.omdep.near', decimals: 6 },
+    { chain: 'pol', symbol: 'POL', assetId: 'nep141:pol.omdep.near', decimals: 18 },
+    { chain: 'pol', symbol: 'WETH', assetId: 'nep141:pol-0x7ceb23fd6bc0add59e62ac25578270cff1b9f619.omdep.near', decimals: 18 },
+    { chain: 'sol', symbol: 'USDC', assetId: 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near', decimals: 6 },
+    { chain: 'sol', symbol: 'USDT', assetId: 'nep141:sol-c800a4bd850783ccb82c2b2c7e84175443606352.omft.near', decimals: 6 },
+    { chain: 'sol', symbol: 'SOL', assetId: 'nep141:sol.omft.near', decimals: 9 },
+    { chain: 'sol', symbol: 'wNEAR', assetId: '1cs_v1:sol:spl:3ZLekZYq2qkZiSpnSvabjit34tUkjSwD1JFuW9as9wBG', decimals: 9 },
+  ];
+  var TOKEN_BY_ID = {};
+  TOKENS.forEach(function (t) { TOKEN_BY_ID[t.assetId] = t; });
+  function tokenByAssetId(id) { return TOKEN_BY_ID[id] || null; }
+
+  /* The 7 original curated routes, kept as quick-pick chips. */
+  var QUICK = [
+    { label: 'USDC Eth → Base', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '1' },
+    { label: 'USDC Base → Eth', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', usd: '1' },
+    { label: 'USDC Eth → NEAR', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', usd: '1' },
+    { label: 'USDC Base → NEAR', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', usd: '1' },
+    { label: 'NEAR → USDC Base', from: 'nep141:wrap.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '1' },
+    { label: 'ETH → USDC Base', from: 'nep141:eth.omft.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '2' },
+    { label: 'USDC Base → NEAR', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:wrap.near', usd: '1' },
   ];
 
   var state = {
-    route: ROUTES[0],
-    dryQuote: null,       // last dry (price-only) quote response
-    liveQuote: null,      // last live quote response (has depositAddress)
+    from: tokenByAssetId('nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near'), // USDC on Ethereum
+    to: tokenByAssetId('nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'), // USDC on Base
+    amountMode: 'usd', // 'usd' | 'token' — default $ mode, as asked
+    prices: {},         // assetId -> live USD price (from GET /v0/tokens)
+    pricesLoaded: false,
+    pricesAttempted: false,
+    menuFor: null,      // 'from' | 'to' while the token menu is open
+    dryQuote: null,     // last dry (price-only) quote response
+    liveQuote: null,    // last live quote response (has depositAddress)
     pollTimer: null,
-    tracking: null,       // depositAddress currently being polled
+    tracking: null,     // depositAddress currently being polled
   };
 
   /* ---------- helpers ---------- */
@@ -102,14 +157,25 @@
   var EVM_RE = /^0x[0-9a-fA-F]{40}$/;
   var NEAR_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
   var NEAR_HEX_RE = /^[0-9a-f]{64}$/;
+  var SOL_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
   function validAddress(addr, chain) {
     if (!addr) return false;
-    if (CHAINS[chain].kind === 'evm') return EVM_RE.test(addr.trim());
+    var kind = CHAINS[chain].kind;
+    if (kind === 'evm') return EVM_RE.test(addr.trim());
+    if (kind === 'sol') return SOL_RE.test(addr.trim());
     var a = addr.trim();
     return (a.length >= 2 && a.length <= 64 && NEAR_RE.test(a)) || NEAR_HEX_RE.test(a);
   }
   function addrPlaceholder(chain) {
-    return CHAINS[chain].kind === 'evm' ? '0x… (e.g. your wallet address)' : 'name.near (e.g. the recipient’s NEAR account)';
+    var kind = CHAINS[chain].kind;
+    if (kind === 'evm') return '0x… (e.g. your wallet address)';
+    if (kind === 'sol') return 'Solana address (base58, e.g. your wallet address)';
+    return 'name.near (e.g. the recipient’s NEAR account)';
+  }
+  function looksLikeDepositAddress(addr) {
+    var a = (addr || '').trim();
+    return EVM_RE.test(a) || SOL_RE.test(a) || NEAR_HEX_RE.test(a) ||
+      (a.length >= 2 && a.length <= 64 && NEAR_RE.test(a));
   }
 
   /* Decimal string -> base-unit integer string, exact (no floats). */
@@ -162,48 +228,289 @@
     if (nav && typeof nav.scrollIntoView === 'function') nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  /* ---------- route UI ---------- */
-  var routeSel = $('route');
-  ROUTES.forEach(function (r) {
-    var o = document.createElement('option');
-    o.value = r.id;
-    o.textContent = r.label;
-    routeSel.appendChild(o);
-  });
-  function currentRoute() {
-    return ROUTES.find(function (r) { return r.id === routeSel.value; }) || ROUTES[0];
+  /* ---------- prices (GET /v0/tokens) ---------- */
+  function priceOf(tok) {
+    var p = state.prices[tok.assetId];
+    return (typeof p === 'number' && p > 0) ? p : null;
   }
-  function applyRoute() {
-    state.route = currentRoute();
-    var r = state.route;
-    $('routeHint').textContent = 'You send ' + r.origin.symbol + ' on ' + CHAINS[r.origin.chain].label +
-      ' · They receive ' + r.dest.symbol + ' on ' + CHAINS[r.dest.chain].label + '.';
-    $('amount').value = r.defAmount;
-    $('amountHint').textContent = r.defAmount + ' ' + r.origin.symbol + ' on ' + CHAINS[r.origin.chain].label;
-    $('refundTo').placeholder = addrPlaceholder(r.origin.chain);
-    $('refundHint').textContent = 'If the swap fails, the ' + r.origin.symbol + ' comes back to this address on ' +
-      CHAINS[r.origin.chain].label + '.';
-    $('destSummary').textContent = r.dest.symbol + ' on ' + CHAINS[r.dest.chain].label;
-    $('recipient').placeholder = addrPlaceholder(r.dest.chain);
+  async function loadPrices() {
+    try {
+      var res = await fetch(API + '/v0/tokens');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var list = await res.json();
+      if (Array.isArray(list)) {
+        list.forEach(function (x) {
+          if (x && x.assetId && typeof x.price === 'number' && x.price > 0) state.prices[x.assetId] = x.price;
+        });
+        state.pricesLoaded = true;
+      }
+    } catch (e) {
+      state.pricesLoaded = false;
+    }
+    state.pricesAttempted = true;
+    refreshModeAvailability();
+    if (state.menuFor) renderMenu($('tokenSearch').value);
+  }
+
+  /* ---------- amount: $ mode vs token mode ---------- */
+  /* Token amount (human units) implied by the input, whatever mode it is in. */
+  function tokenAmountStr() {
+    var raw = $('amount').value.trim();
+    if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+    if (state.amountMode === 'token') return raw;
+    var p = priceOf(state.from);
+    if (!p) return null;
+    var v = parseFloat(raw) / p;
+    if (!isFinite(v) || v <= 0) return null;
+    var s = v.toFixed(Math.min(state.from.decimals, 8)).replace(/0+$/, '').replace(/\.$/, '');
+    return s === '' || s === '0' ? null : s;
+  }
+  /* Dollar value implied by the input, whatever mode it is in. */
+  function usdValueStr() {
+    var raw = $('amount').value.trim();
+    if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+    if (state.amountMode === 'usd') return raw;
+    var p = priceOf(state.from);
+    if (!p) return null;
+    var v = parseFloat(raw) * p;
+    if (!isFinite(v) || v < 0) return null;
+    return String(v);
+  }
+  function updateAmountUI() {
+    var tok = state.from;
+    var p = priceOf(tok);
+    var sub = $('amountSub');
+    var raw = $('amount').value.trim();
+    var validNum = /^\d+(\.\d+)?$/.test(raw);
+    $('modeToken').textContent = tok.symbol;
+    if (state.amountMode === 'usd') {
+      $('curPrefix').textContent = '$';
+      $('modeUsd').classList.add('active');
+      $('modeToken').classList.remove('active');
+      if (p && validNum) {
+        var t = tokenAmountStr();
+        sub.textContent = t ? ('≈ ' + t + ' ' + tok.symbol + ' on ' + CHAINS[tok.chain].label) : '≈ —';
+      } else if (!p) {
+        sub.textContent = state.pricesAttempted
+          ? 'No live price for ' + tok.symbol + ' — switch to token amount.'
+          : 'Loading live price…';
+      } else {
+        sub.textContent = '≈ — ' + tok.symbol;
+      }
+    } else {
+      $('curPrefix').textContent = '';
+      $('modeToken').classList.add('active');
+      $('modeUsd').classList.remove('active');
+      if (p && validNum) {
+        sub.textContent = '≈ ' + fmtUsd(parseFloat(raw) * p) + ' · ' + tok.symbol + ' on ' + CHAINS[tok.chain].label;
+      } else if (!p) {
+        sub.textContent = state.pricesAttempted
+          ? tok.symbol + ' on ' + CHAINS[tok.chain].label + ' (no live price)'
+          : 'Loading live price…';
+      } else {
+        sub.textContent = '≈ —';
+      }
+    }
+  }
+  function refreshModeAvailability() {
+    var hasPrice = !!priceOf(state.from);
+    if (!state.pricesAttempted) { $('modeUsd').disabled = false; $('priceNote').textContent = ''; updateAmountUI(); return; }
+    $('modeUsd').disabled = !hasPrice;
+    if (!hasPrice) {
+      state.amountMode = 'token';
+      $('priceNote').textContent = state.pricesLoaded
+        ? 'No live price for ' + state.from.symbol + ' — enter the token amount.'
+        : 'Live prices are unavailable right now — enter the token amount instead of dollars.';
+    } else {
+      $('priceNote').textContent = '';
+    }
+    updateAmountUI();
+  }
+  function setAmountMode(mode) {
+    if (mode === 'usd' && !priceOf(state.from)) return; // cannot convert without a price
+    if (mode === state.amountMode) { updateAmountUI(); return; }
+    var raw = $('amount').value.trim();
+    if (mode === 'token') {
+      var t = tokenAmountStr();
+      if (t) $('amount').value = t;
+    } else {
+      var u = usdValueStr();
+      if (u !== null) {
+        var n = parseFloat(u);
+        $('amount').value = isFinite(n) ? String(Math.round(n * 100) / 100) : u;
+      }
+    }
+    state.amountMode = mode;
+    updateAmountUI();
+  }
+  $('modeUsd').onclick = function () { setAmountMode('usd'); };
+  $('modeToken').onclick = function () { setAmountMode('token'); };
+  $('amount').addEventListener('input', function () {
+    updateAmountUI();
+    resetToEstimate();
+  });
+
+  /* ---------- token selection: two panels + dropdown menu ---------- */
+  function resetToEstimate() {
+    $('toAmount').textContent = '$0.00';
+    $('toAmountSub').textContent = '≈ 0 — get a quote in step 3';
+  }
+  function applySelection() {
+    var f = state.from, t = state.to;
+    $('fromChain').textContent = CHAINS[f.chain].label;
+    $('fromTokenSym').textContent = f.symbol;
+    $('toChain').textContent = CHAINS[t.chain].label;
+    $('toTokenSym').textContent = t.symbol;
+    $('refundTo').placeholder = addrPlaceholder(f.chain);
+    $('refundHint').textContent = 'If the swap fails, the ' + f.symbol + ' comes back to this address on ' +
+      CHAINS[f.chain].label + '.';
+    $('destSummary').textContent = t.symbol + ' on ' + CHAINS[t.chain].label;
+    $('recipient').placeholder = addrPlaceholder(t.chain);
     $('recipientHint').textContent = 'Double-check this — a swap sent to the wrong address on ' +
-      CHAINS[r.dest.chain].label + ' cannot be undone.';
+      CHAINS[t.chain].label + ' cannot be undone.';
+    refreshModeAvailability();
+    resetToEstimate();
+    updateQuickChips();
     state.dryQuote = null; state.liveQuote = null;
     $('quoteResult').classList.add('hidden');
     $('depositResult').classList.add('hidden');
     hideStatus('status3'); hideStatus('status4');
   }
-  routeSel.addEventListener('change', applyRoute);
+  function selectToken(which, tok) {
+    var other = which === 'from' ? 'to' : 'from';
+    if (tok.assetId === state[other].assetId) {
+      state[other] = state[which]; // picking the same token on both sides swaps them instead
+    }
+    state[which] = tok;
+    closeMenu();
+    applySelection();
+  }
+  function renderMenu(filter) {
+    var list = $('tokenList');
+    list.textContent = '';
+    var f = (filter || '').trim().toLowerCase();
+    var shown = 0;
+    CHAIN_ORDER.forEach(function (chain) {
+      var items = TOKENS.filter(function (t) { return t.chain === chain; })
+        .filter(function (t) {
+          return !f || t.symbol.toLowerCase().indexOf(f) >= 0 ||
+            CHAINS[chain].label.toLowerCase().indexOf(f) >= 0;
+        });
+      if (!items.length) return;
+      var g = document.createElement('div');
+      g.className = 'token-group';
+      g.textContent = CHAINS[chain].label;
+      list.appendChild(g);
+      items.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'token-item'; b.setAttribute('role', 'option');
+        var sel = state[state.menuFor] && state[state.menuFor].assetId === t.assetId;
+        if (sel) b.classList.add('selected');
+        var sym = document.createElement('span'); sym.className = 'sym';
+        sym.textContent = (sel ? '✓ ' : '') + t.symbol;
+        var ch = document.createElement('span'); ch.className = 'chain';
+        ch.textContent = CHAINS[chain].label;
+        var pr = document.createElement('span'); pr.className = 'price';
+        var p = priceOf(t);
+        pr.textContent = p ? fmtUsd(p) : '—';
+        b.appendChild(sym); b.appendChild(ch); b.appendChild(pr);
+        b.onclick = function () { selectToken(state.menuFor, t); };
+        list.appendChild(b);
+        shown++;
+      });
+    });
+    if (!shown) {
+      var none = document.createElement('div');
+      none.className = 'token-group';
+      none.textContent = 'No tokens match that search.';
+      list.appendChild(none);
+    }
+  }
+  function openMenu(which, btn) {
+    state.menuFor = which;
+    renderMenu('');
+    $('tokenSearch').value = '';
+    var menu = $('tokenMenu');
+    menu.classList.remove('hidden');
+    try {
+      var top = btn.offsetTop + btn.offsetHeight + 8;
+      menu.style.top = top + 'px';
+    } catch (e) {}
+    $(which === 'from' ? 'fromTokenBtn' : 'toTokenBtn').setAttribute('aria-expanded', 'true');
+    $('tokenSearch').focus();
+  }
+  function closeMenu() {
+    state.menuFor = null;
+    $('tokenMenu').classList.add('hidden');
+    $('fromTokenBtn').setAttribute('aria-expanded', 'false');
+    $('toTokenBtn').setAttribute('aria-expanded', 'false');
+  }
+  function toggleMenu(which, btn) {
+    if (state.menuFor === which) closeMenu();
+    else openMenu(which, btn);
+  }
+  $('fromTokenBtn').onclick = function (e) { e.stopPropagation(); toggleMenu('from', this); };
+  $('toTokenBtn').onclick = function (e) { e.stopPropagation(); toggleMenu('to', this); };
+  $('tokenSearch').addEventListener('input', function () { renderMenu(this.value); });
+  document.addEventListener('click', function (e) {
+    if (!state.menuFor) return;
+    var t = e.target;
+    if (t.closest && t.closest('#tokenMenu, #fromTokenBtn, #toTokenBtn')) return;
+    closeMenu();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && state.menuFor) closeMenu();
+  });
+  $('btnSwap').onclick = function () {
+    var tmp = state.from; state.from = state.to; state.to = tmp;
+    applySelection();
+  };
+
+  /* ---------- quick-pick chips (the 7 original curated routes) ---------- */
+  var chipsBox = $('quickChips');
+  QUICK.forEach(function (q) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip';
+    b.textContent = q.label;
+    b.onclick = function () {
+      state.from = tokenByAssetId(q.from);
+      state.to = tokenByAssetId(q.to);
+      state.amountMode = 'usd';
+      $('amount').value = q.usd;
+      applySelection();
+    };
+    chipsBox.appendChild(b);
+  });
+  function updateQuickChips() {
+    var btns = chipsBox.querySelectorAll('.chip');
+    QUICK.forEach(function (q, i) {
+      if (btns[i]) btns[i].classList.toggle('active', q.from === state.from.assetId && q.to === state.to.assetId);
+    });
+  }
 
   /* ---------- validation ---------- */
   function validateStep1() {
     var ok = true;
-    var amt = toBaseUnits($('amount').value, state.route.origin.decimals);
-    var amtField = $('amountField');
-    if (!amt || amt === '0') { amtField.classList.add('invalid'); ok = false; }
-    else amtField.classList.remove('invalid');
+    var amtTok = tokenAmountStr();
+    var amtBase = amtTok ? toBaseUnits(amtTok, state.from.decimals) : null;
+    var panel = $('fromPanel'), err = $('amountErr');
+    if (!amtBase || amtBase === '0') {
+      panel.classList.add('invalid');
+      err.textContent = 'Enter an amount greater than 0.';
+      err.style.display = 'block';
+      ok = false;
+    } else if (state.from.assetId === state.to.assetId) {
+      panel.classList.add('invalid');
+      err.textContent = 'Pick a different token or chain for the destination.';
+      err.style.display = 'block';
+      ok = false;
+    } else {
+      panel.classList.remove('invalid');
+      err.style.display = 'none';
+    }
     var refund = $('refundTo').value.trim();
     var refundField = $('refundField');
-    if (!validAddress(refund, state.route.origin.chain)) { refundField.classList.add('invalid'); ok = false; }
+    if (!validAddress(refund, state.from.chain)) { refundField.classList.add('invalid'); ok = false; }
     else refundField.classList.remove('invalid');
     if (!ok) showStatus('status1', 'err', 'Check the fields above.', 'The amount must be greater than 0 and the refund address must match the origin chain.');
     else hideStatus('status1');
@@ -213,24 +520,23 @@
     var ok = true;
     var rec = $('recipient').value.trim();
     var f = $('recipientField');
-    if (!validAddress(rec, state.route.dest.chain)) { f.classList.add('invalid'); ok = false; }
+    if (!validAddress(rec, state.to.chain)) { f.classList.add('invalid'); ok = false; }
     else f.classList.remove('invalid');
-    if (!ok) showStatus('status2', 'err', 'That recipient address does not look right.', 'It must be an address on ' + CHAINS[state.route.dest.chain].label + '.');
+    if (!ok) showStatus('status2', 'err', 'That recipient address does not look right.', 'It must be an address on ' + CHAINS[state.to.chain].label + '.');
     else hideStatus('status2');
     return ok;
   }
 
   /* ---------- 1-Click API ---------- */
   function quoteBody(dry) {
-    var r = state.route;
-    var amountBase = toBaseUnits($('amount').value, r.origin.decimals);
+    var amountBase = toBaseUnits(tokenAmountStr(), state.from.decimals);
     return {
       dry: dry,
       swapType: 'EXACT_INPUT',
       slippageTolerance: 100,
-      originAsset: r.origin.assetId,
+      originAsset: state.from.assetId,
       depositType: 'ORIGIN_CHAIN',
-      destinationAsset: r.dest.assetId,
+      destinationAsset: state.to.assetId,
       amount: amountBase,
       refundTo: $('refundTo').value.trim(),
       refundType: 'ORIGIN_CHAIN',
@@ -263,6 +569,14 @@
     if (!res.ok) throw new Error(body.message || ('Status check failed (HTTP ' + res.status + ').'));
     return body;
   }
+  /* Friendly wording when the API simply cannot price a pair. */
+  function pairError(e) {
+    var msg = String(e && e.message || e);
+    if (/quot|route|liquid|pair|not found|not supported|no swap|insufficient|amount/i.test(msg)) {
+      return { title: 'This pair is not available.', hint: 'NEAR Intents could not price it — try another token or chain. Details: ' + msg };
+    }
+    return { title: 'Could not get a quote.', hint: msg };
+  }
 
   /* ---------- step flow ---------- */
   $('btnNext1').onclick = function () { if (validateStep1()) setStep(2); };
@@ -270,21 +584,23 @@
   $('btnNext2').onclick = function () { if (validateStep2()) { setStep(3); $('btnQuote').click(); } };
 
   function renderQuote(q) {
-    var r = state.route;
     var out = q.quote;
-    $('qSend').textContent = out.amountInFormatted + ' ' + r.origin.symbol + ' (' + fmtUsd(out.amountInUsd) + ')';
-    $('qReceive').textContent = out.amountOutFormatted + ' ' + r.dest.symbol + ' (' + fmtUsd(out.amountOutUsd) + ')';
-    $('qMinOut').textContent = fromBaseUnits(out.minAmountOut, r.dest.decimals) + ' ' + r.dest.symbol + ' (worst case at 1% slippage)';
+    $('qSend').textContent = out.amountInFormatted + ' ' + state.from.symbol + ' (' + fmtUsd(out.amountInUsd) + ')';
+    $('qReceive').textContent = out.amountOutFormatted + ' ' + state.to.symbol + ' (' + fmtUsd(out.amountOutUsd) + ')';
+    $('qMinOut').textContent = fromBaseUnits(out.minAmountOut, state.to.decimals) + ' ' + state.to.symbol + ' (worst case at 1% slippage)';
     var rate = parseFloat(out.amountOutFormatted) / parseFloat(out.amountInFormatted);
     $('qRate').textContent = isFinite(rate)
-      ? '1 ' + r.origin.symbol + ' ≈ ' + rate.toPrecision(4) + ' ' + r.dest.symbol
+      ? '1 ' + state.from.symbol + ' ≈ ' + rate.toPrecision(4) + ' ' + state.to.symbol
       : '—';
     $('qTime').textContent = fmtSeconds(out.timeEstimate);
-    var refundFee = out.refundFee ? fromBaseUnits(out.refundFee, r.origin.decimals) + ' ' + r.origin.symbol + ' (only if refunded)' : '—';
-    var withdrawFee = out.withdrawFee ? fromBaseUnits(out.withdrawFee, r.dest.decimals) + ' ' + r.dest.symbol : '—';
+    var refundFee = out.refundFee ? fromBaseUnits(out.refundFee, state.from.decimals) + ' ' + state.from.symbol + ' (only if refunded)' : '—';
+    var withdrawFee = out.withdrawFee ? fromBaseUnits(out.withdrawFee, state.to.decimals) + ' ' + state.to.symbol : '—';
     $('qFees').textContent = 'Withdraw: ' + withdrawFee + ' · Refund: ' + refundFee + ' (as reported by the quote)';
     $('qRef').textContent = q.correlationId || '—';
     $('quoteResult').classList.remove('hidden');
+    /* Also fill the "To" panel with the quoted receive amount. */
+    $('toAmount').textContent = fmtUsd(out.amountOutUsd);
+    $('toAmountSub').textContent = '≈ ' + out.amountOutFormatted + ' ' + state.to.symbol + ' on ' + CHAINS[state.to.chain].label;
   }
 
   $('btnQuote').onclick = async function () {
@@ -298,7 +614,8 @@
       showStatus('status3', 'ok', 'Live quote ready.',
         'This price is real and free — nothing has moved. Create a deposit address when you are happy with it.');
     } catch (e) {
-      showStatus('status3', 'err', 'Could not get a quote.', String(e && e.message || e));
+      var pe = pairError(e);
+      showStatus('status3', 'err', pe.title, pe.hint);
     } finally {
       btn.disabled = false; btn.textContent = 'Get quote';
     }
@@ -313,9 +630,8 @@
       var q = await requestQuote(false);
       state.liveQuote = q;
       var out = q.quote;
-      var r = state.route;
-      $('dAmount').textContent = out.amountInFormatted + ' ' + r.origin.symbol;
-      $('dToken').textContent = r.origin.symbol + ' on ' + CHAINS[r.origin.chain].label + ' — and nothing else';
+      $('dAmount').textContent = out.amountInFormatted + ' ' + state.from.symbol;
+      $('dToken').textContent = state.from.symbol + ' on ' + CHAINS[state.from.chain].label + ' — and nothing else';
       $('dDeadline').textContent = fmtDate(out.deadline) + ' (deposit address expires then)';
       $('dAddress').textContent = out.depositAddress;
       if (out.depositMemo) {
@@ -325,23 +641,24 @@
       $('depositResult').classList.remove('hidden');
       setStep(4);
       showStatus('status4', 'ok', 'Deposit address ready.',
-        'Send exactly ' + out.amountInFormatted + ' ' + r.origin.symbol + ' on ' + CHAINS[r.origin.chain].label + ' to it. The swap starts when the deposit lands.');
+        'Send exactly ' + out.amountInFormatted + ' ' + state.from.symbol + ' on ' + CHAINS[state.from.chain].label + ' to it. The swap starts when the deposit lands.');
     } catch (e) {
-      showStatus('status4', 'err', 'Could not create a deposit address.', String(e && e.message || e));
+      var pe = pairError(e);
+      showStatus('status4', 'err', pe.title, pe.hint);
     } finally {
       btn.disabled = false; btn.textContent = 'Create deposit address →';
     }
   };
   $('btnCopyDeposit').onclick = function (e) { copyText($('dAddress').textContent, e.currentTarget, 'Copy'); };
   $('btnCopyDetails').onclick = function (e) {
-    var r = state.route, q = state.liveQuote && state.liveQuote.quote;
+    var q = state.liveQuote && state.liveQuote.quote;
     if (!q) return;
     var text = [
       'NearRemit — deposit details',
-      'Send exactly: ' + q.amountInFormatted + ' ' + r.origin.symbol + ' on ' + CHAINS[r.origin.chain].label,
+      'Send exactly: ' + q.amountInFormatted + ' ' + state.from.symbol + ' on ' + CHAINS[state.from.chain].label,
       'Deposit address: ' + q.depositAddress,
       q.depositMemo ? 'Memo: ' + q.depositMemo : null,
-      'Recipient gets: ' + q.amountOutFormatted + ' ' + r.dest.symbol + ' on ' + CHAINS[r.dest.chain].label,
+      'Recipient gets: ' + q.amountOutFormatted + ' ' + state.to.symbol + ' on ' + CHAINS[state.to.chain].label,
       'Valid until: ' + fmtDate(q.deadline),
       'Quote ref: ' + (state.liveQuote.correlationId || ''),
     ].filter(Boolean).join('\n');
@@ -379,20 +696,20 @@
     if (details && details.swapDetails) {
       var sd = details.swapDetails;
       (sd.originChainTxHashes || []).forEach(function (h) {
-        addTxLink(links, 'Origin tx: ', h, CHAINS[state.route.origin.chain].explorer);
+        addTxLink(links, 'Origin tx: ', h, CHAINS[state.from.chain].explorer);
       });
       (sd.destinationChainTxHashes || []).forEach(function (h) {
-        addTxLink(links, 'Destination tx: ', h, CHAINS[state.route.dest.chain].explorer);
+        addTxLink(links, 'Destination tx: ', h, CHAINS[state.to.chain].explorer);
       });
       if (sd.amountOutFormatted) {
         var p = document.createElement('div');
-        p.textContent = 'Delivered: ' + sd.amountOutFormatted + ' ' + state.route.dest.symbol +
+        p.textContent = 'Delivered: ' + sd.amountOutFormatted + ' ' + state.to.symbol +
           (sd.amountOutUsd ? ' (' + fmtUsd(sd.amountOutUsd) + ')' : '');
         links.appendChild(p);
       }
       if (sd.refundedAmountFormatted && sd.refundedAmountFormatted !== '0') {
         var pr = document.createElement('div');
-        pr.textContent = 'Refunded: ' + sd.refundedAmountFormatted + ' ' + state.route.origin.symbol +
+        pr.textContent = 'Refunded: ' + sd.refundedAmountFormatted + ' ' + state.from.symbol +
           (sd.refundReason ? ' — ' + sd.refundReason : '');
         links.appendChild(pr);
       }
@@ -444,8 +761,8 @@
   };
   $('btnLookup').onclick = function () {
     var addr = $('lookupAddr').value.trim();
-    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
-      showStatus('status5', 'err', 'That is not a deposit address.', 'Deposit addresses on EVM chains look like 0x followed by 40 hex characters.');
+    if (!looksLikeDepositAddress(addr)) {
+      showStatus('status5', 'err', 'That is not a deposit address.', 'Deposit addresses look like a 0x address, a Solana address, or a NEAR account.');
       return;
     }
     hideStatus('status5');
@@ -457,6 +774,7 @@
   };
 
   /* ---------- init ---------- */
-  applyRoute();
+  applySelection();
   setStep(1);
+  loadPrices();
 })();

@@ -13,13 +13,15 @@ means bridges, wrapped tokens, and a wallet the recipient may not have.
 
 ## What this is
 
-NearRemit is a single web page. The sender picks a route (for example USDC on Ethereum
-→ USDC on Base), types an amount, pastes the recipient's address, and gets a **live
-quote from NEAR Intents**. The quote hands back one deposit address. The sender sends
-the exact amount to it from any wallet they already have — no wallet connection, no
-sign-up, no seed phrase — and NEAR Intents solvers settle the swap and pay the
-recipient on the destination chain. The page then tracks the swap live until it is
-delivered, refunded, or failed.
+NearRemit is a single web page. The sender picks a token on the "From" panel
+and a token on the "To" panel — any token, any supported chain, from a list
+grouped by chain — types the amount in dollars or in the token itself (the
+page converts with the token's live price), pastes the recipient's address,
+and gets a **live quote from NEAR Intents**. The quote hands back one deposit
+address. The sender sends the exact amount to it from any wallet they already
+have — no wallet connection, no sign-up, no seed phrase — and NEAR Intents
+solvers settle the swap and pay the recipient on the destination chain. The
+page then tracks the swap live until it is delivered, refunded, or failed.
 
 The remittance angle is the story; the working swap is the proof.
 
@@ -57,9 +59,15 @@ and only the $1 you choose to send.
 1. **Open the page.** You see the hero, a mainnet warning, and five steps.
    Do: read the warning. See: the page tells you plainly that this is mainnet
    and to demo with $1.
-2. **Step 1 — you send.** The route is already “USDC on Ethereum → USDC on
-   Base” and the amount is already `1`. Paste any Ethereum address you control
-   in “Your address — for refunds” (for example your own wallet address).
+2. **Step 1 — you send.** The page already shows two panels: “From” USDC on
+   Ethereum, “To” USDC on Base, amount **$1** (the $ / token toggle sits above
+   the panels — in $ mode you type dollars and the page converts to the token
+   amount with the live price; in token mode you type the token amount and it
+   shows the dollar value underneath). Tap a token button to open the picker
+   — tokens grouped by chain, with live prices — or tap a quick-route chip.
+   The ↓ button between the panels swaps the two. Paste any Ethereum address
+   you control in “Your address — for refunds” (for example your own wallet
+   address).
    Do: click **Continue →**. See: step 2 opens.
 3. **Step 2 — they receive.** Paste any Base address in “Recipient address”
    (your own wallet address works for the demo).
@@ -83,10 +91,14 @@ and only the $1 you choose to send.
    development, deposit address reserved until 2026-11-16) and click
    **Check status** — you will see `PENDING_DEPOSIT`, because nothing was ever
    sent to it.
-7. **Try another route.** Change the route in step 1 — for example
-   “NEAR on NEAR → USDC on Base” — and repeat. NEAR recipients use an account
-   like `name.near`; Ethereum/Base recipients use a `0x…` address. The page
-   validates the format for the chain you picked.
+7. **Try another token.** Open the “From” or “To” token picker in step 1 and
+   choose a different token or chain — for example NEAR on NEAR, or SOL on
+   Solana — and repeat. NEAR recipients use an account like `name.near`;
+   Ethereum/Base and other EVM recipients use a `0x…` address; Solana
+   recipients use a base58 address. The page validates the format for the
+   chain you picked. If a pair cannot be priced, the page says so plainly
+   (“This pair is not available”) instead of breaking — the quote API is the
+   source of truth for which pairs work.
 
 ## Verified live (2026-11-13, ~13:08 UTC)
 
@@ -104,6 +116,29 @@ Real calls against the live 1-Click API, no funds moved:
 - `GET /v0/tokens` returns live prices (wNEAR $3.55, ETH $1,959.45 at the time
   of the check). Routes in the app use asset IDs taken from that live list.
 
+## Verified live — $ / token toggle + two-panel picker (2026-11-13, ~14:40 UTC)
+
+jsdom test against the served page with the real API, 33 checks, all passing,
+dry quotes only, no funds moved:
+
+- **$ mode (default):** typing `$2` shows `≈ 2.000958 USDC on Ethereum`
+  (USDC live price $0.999531); a dry quote for that pair returns
+  `1.99832 USDC ($2.00)` out, and the "To" panel fills in with the quoted
+  receive amount.
+- **Token mode:** switching converts the input to the token amount
+  (`2.000958`); typing `0.5` USDC shows `≈ $0.4998` underneath.
+- **Token picker:** the "From" menu opens with 50 tokens in 10 chain groups;
+  picking NEAR on NEAR, then USDC on Base, then a dry quote for
+  NEAR → USDC on Base ($1) returns `1.001035 USDC ($1.00)`. Search filters
+  the list (searching "sol" shows the 4 Solana tokens). The ↓ button swaps
+  the two panels. The 7 quick-route chips still work and the default view is
+  unchanged (USDC on Ethereum → USDC on Base, $1).
+- **Unquotable pair:** BRETT (Base) → GNO (Gnosis) returns `No liquidity
+  available` from the API; the page shows "This pair is not available —
+  try another token or chain" and nothing breaks. Amount `0` shows the
+  validation error. No console errors; the theme toggle still works and
+  persists.
+
 ## Honest limits
 
 - **Mainnet only.** There is no testnet for NEAR Intents, so a full end-to-end
@@ -112,9 +147,12 @@ Real calls against the live 1-Click API, no funds moved:
 - **The page does not send the deposit for you.** The user sends it from their
   own wallet. That is by design — the page never touches a key — but it means a
   judge testing the full swap needs $1 and a wallet on the origin chain.
-- **Quotes are per-route.** The app offers seven curated routes (USDC/NEAR/ETH
-  across Ethereum, Base and NEAR) rather than all 230 tokens the API lists.
-  Adding a route is one entry in the `ROUTES` table in `app.js`.
+- **Quotes are per-pair.** The picker offers 44 tokens across 10 chains
+  (Ethereum, Base, NEAR, Arbitrum, Optimism, BNB Chain, Avalanche, Gnosis,
+  Polygon, Solana) — a curated shortlist of the major tokens from the ~230
+  the API lists, grouped by chain. Whether a given pair can be priced is up
+  to the quote API; if it cannot, the page says so plainly. Adding a token is
+  one entry in the `TOKENS` table in `app.js`.
 - **A `quoteWaitingTimeMs` quirk:** sending `quoteWaitingTimeMs: 3000` makes
   the quote endpoint hang instead of answering (verified three times,
   2026-11-13). The app omits the field, and quotes then return in ~1s.
