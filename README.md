@@ -23,6 +23,13 @@ have — no wallet connection, no sign-up, no seed phrase — and NEAR Intents
 solvers settle the swap and pay the recipient on the destination chain. The
 page then tracks the swap live until it is delivered, refunded, or failed.
 
+Your swap is saved in your browser the moment the deposit address is created
+— a refresh restores the route, the amounts, the deposit address and the
+tracking, with a “Resumed your swap” notice. A “Track a swap you already
+started” box at the top of the page lets you paste any deposit address and
+check its status, and the deposit step lets you copy the details or download
+a receipt before you send.
+
 The remittance angle is the story; the working swap is the proof.
 
 ## NEAR tools used
@@ -78,20 +85,36 @@ and only the $1 you choose to send.
 4. **Step 3 — quote.** Do: click **Create deposit address →**.
    See: a deposit address, the exact amount to send, and a deadline. This is a
    real, reserved deposit address from the live API.
-5. **Step 4 — deposit (optional, moves $1 of real money).** Do: from any wallet,
-   send exactly the amount shown, in the token and on the chain shown, to the
-   deposit address. See: the swap starts by itself.
+5. **Step 4 — deposit (optional, moves $1 of real money).** Before you send,
+   copy the details (**Copy all details**) or download the receipt
+   (**Download receipt**) — both hold the deposit address, the exact amount
+   and a link to track the swap, so a refresh or a closed tab can never lose
+   them. Do: from any wallet, send exactly the amount shown, in the token and
+   on the chain shown, to the deposit address. See: the swap starts by itself.
 6. **Step 5 — track.** Do: click **Track this swap →**. See: the status moves
    from “Waiting for your deposit” → “Deposit seen” → “Settling” → “Delivered”,
    with links to the origin and destination transactions on their explorers.
    If you skip step 5, you can still check any swap later: paste its deposit
-   address in “Or check any swap” and click **Check status**.
+   address in “Track a swap you already started” at the top of the page (or
+   “Or check any swap” in step 5) and click **Check status**.
    A ready-made check with no money at all: paste
    `0x1E9fea631b4beE045218F9873523CBC65C5e9942` (a live quote made during
-   development, deposit address reserved until 2026-11-16) and click
-   **Check status** — you will see `PENDING_DEPOSIT`, because nothing was ever
-   sent to it.
-7. **Try another token.** Open the “From” or “To” token picker in step 1 and
+   development, deposit address reserved until 2026-11-16) in the box at the
+   top and click **Check status** — you will see `PENDING_DEPOSIT`, because
+   nothing was ever sent to it.
+7. **Refresh mid-swap — the recovery.** Do: after step 4 (or 5), reload the
+   page. See: a “Resumed your swap from before the refresh” notice at the top,
+   the deposit address, amounts, route and step all back in place, and — if
+   tracking was running — the status polling picks up again on its own.
+   Click **Start over — clear saved swap** in the notice to wipe the saved
+   swap and reset the page.
+8. **Recover with only the address.** Do: in a fresh browser (or after
+   “Start over”), paste a deposit address in “Track a swap you already
+   started” at the top and click **Check status**. See: the live status for
+   that swap, even though the page holds no other state. The receipt
+   download prints the same address plus a tracking link
+   (`?track=<depositAddress>`) that opens the tracker directly.
+9. **Try another token.** Open the “From” or “To” token picker in step 1 and
    choose a different token or chain — for example NEAR on NEAR, or SOL on
    Solana — and repeat. NEAR recipients use an account like `name.near`;
    Ethereum/Base and other EVM recipients use a `0x…` address; Solana
@@ -139,11 +162,46 @@ dry quotes only, no funds moved:
   validation error. No console errors; the theme toggle still works and
   persists.
 
+## Verified live — refresh recovery (2026-11-13, ~15:00 UTC)
+
+jsdom test against the served page with the real API, 15 checks, all passing
+(dry quotes only except one live quote to create a real deposit address —
+reserved, expires unused, no funds moved; plus 8 edge-case checks, all
+passing):
+
+- **Save:** going through the flow to the deposit step, the live quote
+  returned deposit address `0xB739A0BcF6091Cca1bad1cEe9B915683b37118b6`
+  (deadline 2026-11-16, 1.000526 USDC on Ethereum) and localStorage held it
+  with the route (USDC Eth → USDC Base), the $1 amount, both addresses, the
+  quote and step 4. Starting tracking saved the deposit address as the
+  tracked swap at step 5.
+- **Receipt:** the downloaded receipt is a `.txt` with the deposit address,
+  the exact amount and token, the recipient, the deadline and a tracking
+  link (`?track=<depositAddress>`).
+- **Refresh:** a new page load with the same browser storage showed the
+  “Resumed your swap from before the refresh” notice naming the deposit
+  address, restored the address, the $1 amount, the route and step 5, and
+  tracking resumed on its own — status `Waiting for your deposit`.
+- **Lookup:** on a fresh page with no saved state, pasting the known address
+  `0x1E9fea631b4beE045218F9873523CBC65C5e9942` in the “Track a swap you
+  already started” box at the top showed `PENDING_DEPOSIT`.
+- **Start over:** clicking it deleted the saved swap from localStorage; a
+  fresh load then showed no banner and opened on step 1.
+- **Edge cases:** a saved swap whose deposit address had already expired
+  restores with an “expired — do not send to it” warning and does not resume
+  polling; opening `?track=<depositAddress>` jumps straight into tracking
+  that swap. No console errors in any run.
+
 ## Honest limits
 
 - **Mainnet only.** There is no testnet for NEAR Intents, so a full end-to-end
   demo swap costs real money (we verified everything up to the deposit step
   and deliberately did not send a deposit).
+- **Saved swaps live only in the browser where they were made**
+  (localStorage). If you switch device, change browser, or clear browser
+  data, the only recovery is the deposit address itself — that is why the
+  deposit step tells you to copy the details or download the receipt
+  before you send, and why the receipt prints a `?track=` link.
 - **The page does not send the deposit for you.** The user sends it from their
   own wallet. That is by design — the page never touches a key — but it means a
   judge testing the full swap needs $1 and a wallet on the origin chain.

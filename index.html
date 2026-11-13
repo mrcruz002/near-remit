@@ -25,6 +25,17 @@
 </header>
 
 <main class="wrap">
+  <div class="resume-banner hidden" id="resumeBanner" role="status">
+    <div>
+      <b>Resumed your swap from before the refresh.</b>
+      <span id="resumeText">Your deposit address and progress were saved in this browser.</span>
+    </div>
+    <div class="row">
+      <button class="btn small" id="btnResumeContinue" type="button">Continue where I left off</button>
+      <button class="btn ghost small" id="btnStartOver" type="button">Start over — clear saved swap</button>
+    </div>
+  </div>
+
   <section class="hero">
     <h1>Send money home,<br><em>across chains.</em></h1>
     <p>Pick what you send, paste who receives it, and NEAR Intents moves the value across chains — settled by solvers, delivered to the address you chose. No wallet connection. No sign-up. No seed phrase, ever.</p>
@@ -39,6 +50,16 @@
       Demo with $1. Never send more than a few dollars to try it, and only send the exact token, on the exact chain,
       to the deposit address the quote gives you.
     </div>
+  </section>
+
+  <section class="card lookup-hero" id="lookupHero">
+    <h2><span class="num">↻</span> Track a swap you already started</h2>
+    <p class="sub">Sent money and the page refreshed, or coming back later? Paste the deposit address from your quote — the address you sent the money to — and see where your swap is right now. No need to redo any step.</p>
+    <div class="lookup-row">
+      <input id="lookupHeroAddr" type="text" class="mono" placeholder="0x… deposit address" autocomplete="off" spellcheck="false">
+      <button class="btn" id="btnLookupHero" type="button">Check status</button>
+    </div>
+    <div class="status" id="statusHero"></div>
   </section>
 
   <nav class="steps-nav" id="stepsNav">
@@ -186,7 +207,9 @@
       <div class="row">
         <button class="btn" id="btnTrack" type="button">Track this swap →</button>
         <button class="btn ghost small" id="btnCopyDetails" type="button">Copy all details</button>
+        <button class="btn ghost small" id="btnReceipt" type="button">Download receipt</button>
       </div>
+      <p class="muted small" style="margin-top:10px">Copy the details or download the receipt <b>before</b> you send — they hold the deposit address, the exact amount and a link to track the swap, so a refresh or a closed tab can never lose them.</p>
       <p class="muted small" style="margin-top:10px">Send only the token above, only on the chain above, and only the exact amount. Sending anything else — a different token, a different chain, or the wrong amount — can lose the money or trigger a refund minus fees.</p>
     </div>
     <div class="status" id="status4"></div>
@@ -244,8 +267,12 @@
       <p>The deposit is refunded to the refund address you gave in step 1, minus the refund fee shown in the quote. That is why the refund address matters — use an address you control on the origin chain.</p>
     </details>
     <details>
+      <summary>What if the page refreshes after I send money?</summary>
+      <p>Nothing is lost. The page saves your swap in your browser the moment the deposit address is created — the route, the amounts, the deposit address and the tracking. Reload and it puts them all back, with a “Resumed your swap” notice at the top, and tracking picks up again. If you only have the deposit address (another device, cleared browser data), paste it in “Track a swap you already started” at the top of the page.</p>
+    </details>
+    <details>
       <summary>Does this page hold my money or my keys?</summary>
-      <p>Never. The page never asks for a seed phrase or a private key, and it never holds funds — money goes straight from your wallet to the deposit address, and from NEAR Intents to the recipient. The only thing stored in your browser is your light/dark theme choice.</p>
+      <p>Never. The page never asks for a seed phrase or a private key, and it never holds funds — money goes straight from your wallet to the deposit address, and from NEAR Intents to the recipient. The only things stored in your browser are your light/dark theme choice and your current swap (route, amounts, deposit address, tracking state), saved in local storage on your own device so a refresh cannot lose it. “Start over” wipes the saved swap.</p>
     </details>
     <details>
       <summary>Is this official NEAR software?</summary>

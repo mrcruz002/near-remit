@@ -22,6 +22,113 @@
     };
   })();
 
+  /* ---------- persistence: a refresh must never lose a swap ----------
+     The full swap state is saved to localStorage on every step — route,
+     amount + $/token mode, addresses, quotes, deposit address, deadline,
+     memo and tracking state. On load it is restored automatically and
+     tracking resumes. "Start over" wipes it. Nothing leaves the browser. */
+  var SWAP_KEY = 'nearremit-swap-v1';
+  var persistReady = false; // false until init has restored (so init never overwrites a saved swap)
+  function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+  function lsDel(k) { try { window.localStorage.removeItem(k); } catch (e) {} }
+  function saveState() {
+    if (!persistReady) return;
+    try {
+      lsSet(SWAP_KEY, JSON.stringify({
+        version: 1,
+        savedAt: new Date().toISOString(),
+        step: maxStep,
+        from: state.from ? state.from.assetId : null,
+        to: state.to ? state.to.assetId : null,
+        amountMode: state.amountMode,
+        amount: $('amount').value,
+        refundTo: $('refundTo').value,
+        recipient: $('recipient').value,
+        dryQuote: state.dryQuote,
+        liveQuote: state.liveQuote,
+        tracking: state.tracking
+      }));
+    } catch (e) {}
+  }
+  function loadSavedState() {
+    try {
+      var raw = lsGet(SWAP_KEY);
+      if (!raw) return null;
+      var d = JSON.parse(raw);
+      if (!d || d.version !== 1) return null;
+      return d;
+    } catch (e) { return null; }
+  }
+  function clearSavedSwap() {
+    lsDel(SWAP_KEY);
+    location.reload();
+  }
+  function urlParam(name) {
+    var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.search || '');
+    return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : null;
+  }
+  function pageBaseUrl() {
+    if (window.location.origin && window.location.origin !== 'null') return window.location.origin + window.location.pathname;
+    return window.location.href.split('?')[0].split('#')[0];
+  }
+  function restoreSavedState() {
+    var d = loadSavedState();
+    if (!d) return false;
+    var hasAnything = !!(d.from || d.to || d.dryQuote || d.liveQuote || (d.amount && d.amount !== '1') || d.refundTo || d.recipient);
+    if (!hasAnything) return false;
+    if (d.from) { var f = tokenByAssetId(d.from); if (f) state.from = f; }
+    if (d.to) { var t = tokenByAssetId(d.to); if (t) state.to = t; }
+    if (d.amountMode === 'usd' || d.amountMode === 'token') state.amountMode = d.amountMode;
+    if (typeof d.amount === 'string' && d.amount) $('amount').value = d.amount;
+    if (typeof d.refundTo === 'string') $('refundTo').value = d.refundTo;
+    if (typeof d.recipient === 'string') $('recipient').value = d.recipient;
+    applySelection();
+    var resumedStep = 1;
+    if (d.dryQuote) {
+      state.dryQuote = d.dryQuote;
+      renderQuote(d.dryQuote);
+      resumedStep = Math.max(d.step || 3, 3);
+    }
+    var expired = false;
+    if (d.liveQuote && d.liveQuote.quote && d.liveQuote.quote.depositAddress) {
+      state.liveQuote = d.liveQuote;
+      renderDeposit(d.liveQuote);
+      resumedStep = Math.max(d.step || 4, 4);
+      expired = !!(d.liveQuote.quote.deadline && new Date(d.liveQuote.quote.deadline).getTime() < Date.now());
+      if (expired) {
+        showStatus('status4', 'warn', 'This deposit address has expired.',
+          'It was valid until ' + fmtDate(d.liveQuote.quote.deadline) + '. Do not send to it — start over for a fresh quote.');
+      }
+    }
+    maxStep = Math.max(maxStep, resumedStep);
+    setStep(resumedStep, true);
+    var trackingResumes = !!(d.tracking && state.liveQuote && state.liveQuote.quote && state.liveQuote.quote.depositAddress && !expired);
+    if (d.liveQuote && d.liveQuote.quote) {
+      var a = d.liveQuote.quote.depositAddress;
+      $('resumeText').textContent = 'Deposit address ' + a.slice(0, 10) + '…' + a.slice(-6) +
+        ' and your ' + state.from.symbol + ' → ' + state.to.symbol + ' route were saved in this browser.' +
+        (expired ? ' The deposit address has expired — do not send to it.'
+                 : trackingResumes ? ' Tracking picks up again below.'
+                 : ' Press "Track this swap" below to follow it.');
+    } else {
+      $('resumeText').textContent = 'Your route, amount and addresses were saved in this browser.';
+    }
+    $('resumeBanner').classList.remove('hidden');
+    if (trackingResumes) {
+      startTracking(state.liveQuote.quote.depositAddress, true);
+    } else if (resumedStep >= 5 && state.liveQuote && state.liveQuote.quote && state.liveQuote.quote.depositAddress && !expired) {
+      // Was on the tracking step but tracking had stopped (finished or
+      // stopped): one status check, no polling, so the last state still shows.
+      (function (addr, memo) {
+        fetchStatus(addr, memo)
+          .then(function (res) { renderTracker(res.status, res); })
+          .catch(function () {});
+      })(state.liveQuote.quote.depositAddress, state.liveQuote.quote.depositMemo);
+    }
+    return true;
+  }
+
   /* ---------- chains ---------- */
   var CHAINS = {
     eth:    { label: 'Ethereum',  kind: 'evm',  explorer: 'https://etherscan.io/tx/' },
@@ -216,7 +323,7 @@
 
   /* ---------- stepper ---------- */
   var maxStep = 1;
-  function setStep(n) {
+  function setStep(n, noScroll) {
     maxStep = Math.max(maxStep, n);
     document.querySelectorAll('.step-nav').forEach(function (el) {
       var s = +el.dataset.step;
@@ -225,7 +332,7 @@
     });
     for (var i = 1; i <= 5; i++) $('card' + i).classList.toggle('hidden', i > maxStep);
     var nav = $('stepsNav');
-    if (nav && typeof nav.scrollIntoView === 'function') nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!noScroll && nav && typeof nav.scrollIntoView === 'function') nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   /* ---------- prices (GET /v0/tokens) ---------- */
@@ -342,13 +449,17 @@
     }
     state.amountMode = mode;
     updateAmountUI();
+    saveState();
   }
   $('modeUsd').onclick = function () { setAmountMode('usd'); };
   $('modeToken').onclick = function () { setAmountMode('token'); };
   $('amount').addEventListener('input', function () {
     updateAmountUI();
     resetToEstimate();
+    saveState();
   });
+  $('refundTo').addEventListener('input', saveState);
+  $('recipient').addEventListener('input', saveState);
 
   /* ---------- token selection: two panels + dropdown menu ---------- */
   function resetToEstimate() {
@@ -375,6 +486,7 @@
     $('quoteResult').classList.add('hidden');
     $('depositResult').classList.add('hidden');
     hideStatus('status3'); hideStatus('status4');
+    saveState();
   }
   function selectToken(which, tok) {
     var other = which === 'from' ? 'to' : 'from';
@@ -611,6 +723,7 @@
       var q = await requestQuote(true);
       state.dryQuote = q;
       renderQuote(q);
+      saveState();
       showStatus('status3', 'ok', 'Live quote ready.',
         'This price is real and free — nothing has moved. Create a deposit address when you are happy with it.');
     } catch (e) {
@@ -622,6 +735,44 @@
   };
   $('btnRefreshQuote').onclick = function () { $('btnQuote').click(); };
 
+  /* Fill the deposit card from a live quote — used both when the quote is
+     first created and when a saved swap is restored after a refresh. */
+  function renderDeposit(q) {
+    var out = q.quote;
+    $('dAmount').textContent = out.amountInFormatted + ' ' + state.from.symbol;
+    $('dToken').textContent = state.from.symbol + ' on ' + CHAINS[state.from.chain].label + ' — and nothing else';
+    $('dDeadline').textContent = fmtDate(out.deadline) + ' (deposit address expires then)';
+    $('dAddress').textContent = out.depositAddress;
+    if (out.depositMemo) {
+      $('dMemo').textContent = out.depositMemo;
+      $('dMemoRow').style.display = 'block';
+    } else $('dMemoRow').style.display = 'none';
+    $('depositResult').classList.remove('hidden');
+  }
+  /* One text block with everything needed to recover a swap — used by both
+     "Copy all details" and "Download receipt". */
+  function swapDetailsText() {
+    var q = state.liveQuote && state.liveQuote.quote;
+    if (!q) return null;
+    var trackUrl = pageBaseUrl() + '?track=' + encodeURIComponent(q.depositAddress);
+    var lines = [
+      'NearRemit — swap details (save this before you send)',
+      'Send exactly: ' + q.amountInFormatted + ' ' + state.from.symbol + ' on ' + CHAINS[state.from.chain].label,
+      'Deposit address: ' + q.depositAddress,
+    ];
+    if (q.depositMemo) lines.push('Memo: ' + q.depositMemo);
+    lines.push(
+      'Recipient gets: ' + q.amountOutFormatted + ' ' + state.to.symbol + ' on ' + CHAINS[state.to.chain].label,
+      'Recipient address: ' + $('recipient').value.trim(),
+      'Refund address: ' + $('refundTo').value.trim(),
+      'Valid until: ' + fmtDate(q.deadline),
+      'Quote ref: ' + (state.liveQuote.correlationId || ''),
+      'Track it: ' + trackUrl,
+      'Demo: ' + pageBaseUrl()
+    );
+    return lines.join('\n');
+  }
+
   $('btnDeposit').onclick = async function () {
     hideStatus('status4');
     var btn = $('btnDeposit');
@@ -629,19 +780,11 @@
     try {
       var q = await requestQuote(false);
       state.liveQuote = q;
-      var out = q.quote;
-      $('dAmount').textContent = out.amountInFormatted + ' ' + state.from.symbol;
-      $('dToken').textContent = state.from.symbol + ' on ' + CHAINS[state.from.chain].label + ' — and nothing else';
-      $('dDeadline').textContent = fmtDate(out.deadline) + ' (deposit address expires then)';
-      $('dAddress').textContent = out.depositAddress;
-      if (out.depositMemo) {
-        $('dMemo').textContent = out.depositMemo;
-        $('dMemoRow').style.display = 'block';
-      } else $('dMemoRow').style.display = 'none';
-      $('depositResult').classList.remove('hidden');
+      renderDeposit(q);
       setStep(4);
+      saveState();
       showStatus('status4', 'ok', 'Deposit address ready.',
-        'Send exactly ' + out.amountInFormatted + ' ' + state.from.symbol + ' on ' + CHAINS[state.from.chain].label + ' to it. The swap starts when the deposit lands.');
+        'Send exactly ' + q.quote.amountInFormatted + ' ' + state.from.symbol + ' on ' + CHAINS[state.from.chain].label + ' to it. The swap starts when the deposit lands.');
     } catch (e) {
       var pe = pairError(e);
       showStatus('status4', 'err', pe.title, pe.hint);
@@ -651,18 +794,24 @@
   };
   $('btnCopyDeposit').onclick = function (e) { copyText($('dAddress').textContent, e.currentTarget, 'Copy'); };
   $('btnCopyDetails').onclick = function (e) {
-    var q = state.liveQuote && state.liveQuote.quote;
-    if (!q) return;
-    var text = [
-      'NearRemit — deposit details',
-      'Send exactly: ' + q.amountInFormatted + ' ' + state.from.symbol + ' on ' + CHAINS[state.from.chain].label,
-      'Deposit address: ' + q.depositAddress,
-      q.depositMemo ? 'Memo: ' + q.depositMemo : null,
-      'Recipient gets: ' + q.amountOutFormatted + ' ' + state.to.symbol + ' on ' + CHAINS[state.to.chain].label,
-      'Valid until: ' + fmtDate(q.deadline),
-      'Quote ref: ' + (state.liveQuote.correlationId || ''),
-    ].filter(Boolean).join('\n');
+    var text = swapDetailsText();
+    if (!text) return;
     copyText(text, e.currentTarget, 'Copy all details');
+  };
+  $('btnReceipt').onclick = function (e) {
+    var text = swapDetailsText();
+    if (!text) return;
+    var addr = state.liveQuote.quote.depositAddress || 'swap';
+    var blob = new Blob([text], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'nearremit-receipt-' + addr.slice(0, 10) + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    var btn = e.currentTarget;
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+    if (btn) { btn.textContent = 'Downloaded ✓'; setTimeout(function () { btn.textContent = 'Download receipt'; }, 1600); }
   };
 
   /* ---------- tracking ---------- */
@@ -734,11 +883,16 @@
   async function pollOnce() {
     if (!state.tracking) return;
     try {
-      var memo = state.liveQuote && state.liveQuote.quote ? state.liveQuote.quote.depositMemo : null;
+      /* Only send the saved memo when tracking the live quote's own
+         deposit address — a looked-up address has no memo of ours. */
+      var memo = (state.liveQuote && state.liveQuote.quote &&
+        state.liveQuote.quote.depositAddress === state.tracking)
+        ? state.liveQuote.quote.depositMemo : null;
       var res = await fetchStatus(state.tracking, memo);
       var done = renderTracker(res.status, res);
       if (done) {
         stopPolling();
+        saveState();
         if (res.status === 'SUCCESS') showStatus('status5', 'ok', 'Delivered.', 'The recipient got the money. Links above go to the chain explorers.');
         else if (res.status === 'REFUNDED') showStatus('status5', 'warn', 'Refunded.', 'The swap did not complete — the deposit went back to your refund address, minus the refund fee.');
         else showStatus('status5', 'err', 'Swap failed.', 'Check the details above; the deposit should be refunded to your address.');
@@ -747,34 +901,60 @@
       showStatus('status5', 'err', 'Status check failed.', String(e && e.message || e) + ' — retrying automatically.');
     }
   }
-  function startTracking(depositAddress) {
+  function startTracking(depositAddress, noScroll) {
     stopPolling();
     state.tracking = depositAddress;
-    setStep(5);
+    setStep(5, noScroll);
     $('trackState').textContent = 'Status: checking…';
     pollOnce();
     state.pollTimer = setInterval(pollOnce, 10000);
+    saveState();
   }
   $('btnTrack').onclick = function () {
     var q = state.liveQuote && state.liveQuote.quote;
     if (q && q.depositAddress) startTracking(q.depositAddress);
   };
-  $('btnLookup').onclick = function () {
-    var addr = $('lookupAddr').value.trim();
-    if (!looksLikeDepositAddress(addr)) {
-      showStatus('status5', 'err', 'That is not a deposit address.', 'Deposit addresses look like a 0x address, a Solana address, or a NEAR account.');
-      return;
+  /* One lookup path for both the step-5 field and the prominent box at the
+     top of the page — paste a deposit address, see its status. */
+  function checkSwapAddress(addr, statusId) {
+    var a = (addr || '').trim();
+    if (!looksLikeDepositAddress(a)) {
+      showStatus(statusId, 'err', 'That is not a deposit address.', 'Deposit addresses look like a 0x address, a Solana address, or a NEAR account.');
+      return false;
     }
-    hideStatus('status5');
-    startTracking(addr);
-  };
+    hideStatus(statusId);
+    startTracking(a);
+    return true;
+  }
+  $('btnLookup').onclick = function () { checkSwapAddress($('lookupAddr').value, 'status5'); };
+  $('btnLookupHero').onclick = function () { checkSwapAddress($('lookupHeroAddr').value, 'statusHero'); };
   $('btnStopTrack').onclick = function () {
     stopPolling();
+    saveState();
     showStatus('status5', 'warn', 'Tracking stopped.', 'Paste the deposit address above any time to check again.');
   };
 
   /* ---------- init ---------- */
   applySelection();
-  setStep(1);
+  setStep(1, true);
+  restoreSavedState();
   loadPrices();
+  persistReady = true;
+  saveState();
+  /* Banner buttons: keep going where the restored swap left off, or wipe
+     the saved swap and start clean. */
+  $('btnResumeContinue').onclick = function () {
+    $('resumeBanner').classList.add('hidden');
+    var nav = $('stepsNav');
+    if (nav && typeof nav.scrollIntoView === 'function') nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  $('btnStartOver').onclick = clearSavedSwap;
+  /* Deep link: ?track=<depositAddress> opens the tracker for that swap
+     (the link printed in the downloaded receipt). */
+  var trackParam = urlParam('track');
+  if (trackParam && looksLikeDepositAddress(trackParam) && trackParam !== state.tracking) {
+    $('lookupHeroAddr').value = trackParam;
+    checkSwapAddress(trackParam, 'statusHero');
+  }
+  window.addEventListener('beforeunload', saveState);
 })();
