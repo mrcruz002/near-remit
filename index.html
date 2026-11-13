@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NearRemit — Send money home, across chains</title>
+<meta name="description" content="A cross-chain remittance demo: pick what you send, paste who receives it, and NEAR Intents settles the swap. No wallet connection, no sign-up, no seed phrase. Built for NEAR HACKATHON.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="#">
+      <span class="mark">N</span>
+      <span><b>NEARREMIT</b><span>Cross-chain remittance</span></span>
+    </a>
+    <div class="bar-right">
+      <span class="pill"><span class="dot live"></span>NEAR Intents · Live</span>
+      <button class="theme-btn" id="themeBtn" type="button" aria-label="Switch theme">◐&nbsp;<span id="themeLabel">Light</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Send money home,<br><em>across chains.</em></h1>
+    <p>Pick what you send, paste who receives it, and NEAR Intents moves the value across chains — settled by solvers, delivered to the address you chose. No wallet connection. No sign-up. No seed phrase, ever.</p>
+    <div class="hero-stats">
+      <div class="stat"><b>~1 min</b>typical settlement</div>
+      <div class="stat"><b>No wallet</b>just send to an address</div>
+      <div class="stat"><b>$1 demo</b>tiny amounts only</div>
+      <div class="stat"><b>Real quotes</b>live NEAR Intents API</div>
+    </div>
+    <div class="notice">
+      <b>Mainnet only — read this first.</b> NEAR Intents has no testnet, so every swap here moves real money on mainnet.
+      Demo with $1. Never send more than a few dollars to try it, and only send the exact token, on the exact chain,
+      to the deposit address the quote gives you.
+    </div>
+  </section>
+
+  <nav class="steps-nav" id="stepsNav">
+    <div class="step-nav active" data-step="1"><span class="n">1</span>You send</div>
+    <div class="step-nav" data-step="2"><span class="n">2</span>They receive</div>
+    <div class="step-nav" data-step="3"><span class="n">3</span>Quote</div>
+    <div class="step-nav" data-step="4"><span class="n">4</span>Deposit</div>
+    <div class="step-nav" data-step="5"><span class="n">5</span>Track</div>
+  </nav>
+
+  <!-- STEP 1 -->
+  <section class="card" id="card1">
+    <h2><span class="num">01</span> You send</h2>
+    <p class="sub">Choose the route and the amount. The amount is in the token you send — the quote will show what that is worth in dollars.</p>
+    <div class="field">
+      <label for="route">Route — what you send → what they receive</label>
+      <select id="route"></select>
+      <div class="hint" id="routeHint"></div>
+    </div>
+    <div class="field-row">
+      <div class="field" id="amountField">
+        <label for="amount">Amount to send</label>
+        <input id="amount" type="text" inputmode="decimal" value="1" autocomplete="off" spellcheck="false">
+        <div class="hint" id="amountHint">1 USDC on Ethereum</div>
+        <div class="err-text">Enter an amount greater than 0.</div>
+      </div>
+      <div class="field" id="refundField">
+        <label for="refundTo">Your address — for refunds</label>
+        <input id="refundTo" type="text" class="mono" placeholder="0x… (Ethereum / Base) or name.near (NEAR)" autocomplete="off" spellcheck="false">
+        <div class="hint" id="refundHint">If the swap fails, the money comes back here.</div>
+        <div class="err-text" id="refundErr">That address does not look right for this chain.</div>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnNext1" type="button">Continue →</button>
+    </div>
+    <div class="status" id="status1"></div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="card hidden" id="card2">
+    <h2><span class="num">02</span> They receive</h2>
+    <p class="sub">Who gets the money, and where. This is the person back home — a wallet address on the destination chain.</p>
+    <div class="field">
+      <label>They receive</label>
+      <div class="mono" id="destSummary" style="font-size:15px">USDC on Base</div>
+      <div class="hint">Fixed by the route you picked in step 1.</div>
+    </div>
+    <div class="field" id="recipientField">
+      <label for="recipient">Recipient address</label>
+      <input id="recipient" type="text" class="mono" placeholder="0x… (Ethereum / Base) or name.near (NEAR)" autocomplete="off" spellcheck="false">
+      <div class="hint" id="recipientHint">Double-check this — a swap sent to the wrong address cannot be undone.</div>
+      <div class="err-text" id="recipientErr">That address does not look right for this chain.</div>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btnBack2" type="button">← Back</button>
+      <button class="btn" id="btnNext2" type="button">Get a quote →</button>
+    </div>
+    <div class="status" id="status2"></div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="card hidden" id="card3">
+    <h2><span class="num">03</span> Quote</h2>
+    <p class="sub">A live price from NEAR Intents solvers. This step is free — it only asks for a price, it moves nothing.</p>
+    <div class="row">
+      <button class="btn" id="btnQuote" type="button">Get quote</button>
+      <span class="muted small" id="quoteHint">Takes about a second.</span>
+    </div>
+    <div id="quoteResult" class="hidden">
+      <dl class="kv">
+        <dt>You send</dt><dd class="big" id="qSend">—</dd>
+        <dt>They receive</dt><dd class="big" id="qReceive">—</dd>
+        <dt>At least they get</dt><dd id="qMinOut">—</dd>
+        <dt>Rate</dt><dd id="qRate">—</dd>
+        <dt>Estimated time</dt><dd id="qTime">—</dd>
+        <dt>Network fees</dt><dd id="qFees">—</dd>
+        <dt>Quote ref</dt><dd class="mono" id="qRef">—</dd>
+      </dl>
+      <div class="row">
+        <button class="btn" id="btnDeposit" type="button">Create deposit address →</button>
+        <button class="btn ghost small" id="btnRefreshQuote" type="button">Refresh quote</button>
+      </div>
+      <p class="muted small" style="margin-top:10px">Prices move. Creating the deposit address locks this quote in — after that, send the exact amount before the deadline shown.</p>
+    </div>
+    <div class="status" id="status3"></div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="card hidden" id="card4">
+    <h2><span class="num">04</span> Deposit — send exactly this</h2>
+    <p class="sub">Send the amount below, in the token and on the chain shown, to this address from any wallet. The swap starts by itself when the deposit lands. Nothing here asks for a seed phrase or a wallet connection.</p>
+    <div id="depositResult" class="hidden">
+      <dl class="kv">
+        <dt>Send exactly</dt><dd class="big" id="dAmount">—</dd>
+        <dt>Token &amp; chain</dt><dd id="dToken">—</dd>
+        <dt>Valid until</dt><dd id="dDeadline">—</dd>
+      </dl>
+      <div class="deposit-box">
+        <div class="small muted" style="margin-bottom:6px">Deposit address</div>
+        <div class="addr-line">
+          <span class="mono addr" id="dAddress">—</span>
+          <button class="copy-btn" id="btnCopyDeposit" type="button">Copy</button>
+        </div>
+        <div class="small muted" id="dMemoRow" style="margin-top:10px;display:none">Memo (include it with the transfer): <span class="mono" id="dMemo"></span></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnTrack" type="button">Track this swap →</button>
+        <button class="btn ghost small" id="btnCopyDetails" type="button">Copy all details</button>
+      </div>
+      <p class="muted small" style="margin-top:10px">Send only the token above, only on the chain above, and only the exact amount. Sending anything else — a different token, a different chain, or the wrong amount — can lose the money or trigger a refund minus fees.</p>
+    </div>
+    <div class="status" id="status4"></div>
+  </section>
+
+  <!-- STEP 5 -->
+  <section class="card hidden" id="card5">
+    <h2><span class="num">05</span> Track the swap</h2>
+    <p class="sub">We ask NEAR Intents every 10 seconds. You can close this page — paste the deposit address below any time to check again.</p>
+    <div class="tracker" id="tracker">
+      <div class="track-step" data-state="PENDING_DEPOSIT"><span class="bubble">1</span><span>Waiting for your deposit</span></div>
+      <div class="track-step" data-state="KNOWN_DEPOSIT_TX"><span class="bubble">2</span><span>Deposit seen on the origin chain</span></div>
+      <div class="track-step" data-state="PROCESSING"><span class="bubble">3</span><span>Solvers are settling the swap</span></div>
+      <div class="track-step" data-state="SUCCESS"><span class="bubble">4</span><span>Delivered to the recipient</span></div>
+    </div>
+    <div class="mono small muted" id="trackState">Status: —</div>
+    <div class="txlist" id="txLinks"></div>
+    <div class="field" style="margin-top:16px">
+      <label for="lookupAddr">Or check any swap — paste its deposit address</label>
+      <input id="lookupAddr" type="text" class="mono" placeholder="0x… deposit address" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="row">
+      <button class="btn ghost small" id="btnLookup" type="button">Check status</button>
+      <button class="btn ghost small" id="btnStopTrack" type="button">Stop tracking</button>
+    </div>
+    <div class="status" id="status5"></div>
+  </section>
+
+  <section class="info">
+    <div class="card">
+      <h3>How it works</h3>
+      <p>1. You get a live quote from NEAR Intents.<br>2. The quote gives you one deposit address.<br>3. You send the exact amount to it from any wallet.<br>4. Solvers settle the swap and pay the recipient on the destination chain.</p>
+    </div>
+    <div class="card">
+      <h3>Why NEAR?</h3>
+      <p>NEAR Intents lets money move across chains without a bridge you have to trust or a wallet the recipient has to install. One deposit, one settlement, any chain — that is what makes a $1 remittance possible instead of a $20 wire.</p>
+    </div>
+    <div class="card">
+      <h3>What it costs</h3>
+      <p>The quote shows the real rate before you commit. Without a partner key, NEAR Intents adds a 0.2% platform fee. No account, no sign-up, no fee from this page — it only calls the public API.</p>
+    </div>
+  </section>
+
+  <section>
+    <details>
+      <summary>Do I need a NEAR wallet?</summary>
+      <p>No. The deposit flow needs no wallet connection at all — you send from any wallet you already have, on the origin chain. A NEAR wallet is only needed if you choose to receive on NEAR (then the recipient address is a NEAR account like <span class="mono">name.near</span>).</p>
+    </details>
+    <details>
+      <summary>Is this a testnet demo?</summary>
+      <p>No — NEAR Intents has no testnet, so this is mainnet and every deposit moves real money. That is why the default amount is $1 and the page warns you at the top. Quotes are free and move nothing; only a deposit moves money.</p>
+    </details>
+    <details>
+      <summary>What if the swap fails?</summary>
+      <p>The deposit is refunded to the refund address you gave in step 1, minus the refund fee shown in the quote. That is why the refund address matters — use an address you control on the origin chain.</p>
+    </details>
+    <details>
+      <summary>Does this page hold my money or my keys?</summary>
+      <p>Never. The page never asks for a seed phrase or a private key, and it never holds funds — money goes straight from your wallet to the deposit address, and from NEAR Intents to the recipient. The only thing stored in your browser is your light/dark theme choice.</p>
+    </details>
+    <details>
+      <summary>Is this official NEAR software?</summary>
+      <p>No — an independent demo built for NEAR HACKATHON. It only calls NEAR Intents’ own public 1-Click API (<span class="mono">1click.chaindefuser.com</span>). See the README in the repository for the full list of NEAR tools used.</p>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <b>NEARREMIT</b> — built for <b>NEAR HACKATHON</b>, Real-World Money track. Cross-chain settlement by <b>NEAR Intents (1-Click Swap API)</b>.
+    Rules: <a href="https://nearhackathon.com/HACKATHON.md">HACKATHON.md</a> · Docs: <a href="https://docs.near-intents.org">docs.near-intents.org</a> · Hackathon: <a href="https://nearhackathon.com">nearhackathon.com</a>.
+    Demo with $1. Mainnet only — NEAR Intents has no testnet.
+  </div>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
