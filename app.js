@@ -155,10 +155,12 @@
     gnosis: { label: 'Gnosis',    kind: 'evm',  explorer: 'https://gnosisscan.io/tx/' },
     pol:    { label: 'Polygon',   kind: 'evm',  explorer: 'https://polygonscan.com/tx/' },
     sol:    { label: 'Solana',    kind: 'sol',  explorer: 'https://solscan.io/tx/' },
+    hood:   { label: 'Robinhood', kind: 'evm',  explorer: 'https://robinhoodchain.blockscout.com/tx/' },
   };
-  var CHAIN_ORDER = ['eth', 'base', 'near', 'arb', 'op', 'bsc', 'avax', 'gnosis', 'pol', 'sol'];
+  var CHAIN_ORDER = ['eth', 'base', 'near', 'arb', 'op', 'bsc', 'avax', 'gnosis', 'pol', 'sol', 'hood'];
 
-  /* ---------- tokens (curated from GET /v0/tokens, verified live 2026-11-13).
+  /* ---------- tokens (curated from GET /v0/tokens, verified live 2026-11-13;
+     Robinhood ('hood') added 2026-11-14, verified live the same day.
      The API lists ~230 tokens; this is the sensible shortlist — the major
      tokens on each chain we can take deposits from and pay out to. Prices come
      from the live API at load time; assetIds and decimals are fixed here. ---------- */
@@ -213,12 +215,17 @@
     { chain: 'sol', symbol: 'USDT', assetId: 'nep141:sol-c800a4bd850783ccb82c2b2c7e84175443606352.omft.near', decimals: 6 },
     { chain: 'sol', symbol: 'SOL', assetId: 'nep141:sol.omft.near', decimals: 9 },
     { chain: 'sol', symbol: 'wNEAR', assetId: '1cs_v1:sol:spl:3ZLekZYq2qkZiSpnSvabjit34tUkjSwD1JFuW9as9wBG', decimals: 9 },
+    { chain: 'hood', symbol: 'ETH', assetId: 'nep141:hood.omft.near', decimals: 18 },
+    { chain: 'hood', symbol: 'WETH', assetId: 'nep141:hood-0x0bd7d308f8e1639fab988df18a8011f41eacad73.omft.near', decimals: 18 },
+    { chain: 'hood', symbol: 'USDG', assetId: 'nep141:hood-0x5fc5360d0400a0fd4f2af552add042d716f1d168.omft.near', decimals: 6 },
+    { chain: 'hood', symbol: 'USDe', assetId: 'nep141:hood-0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34.omft.near', decimals: 18 },
   ];
   var TOKEN_BY_ID = {};
   TOKENS.forEach(function (t) { TOKEN_BY_ID[t.assetId] = t; });
   function tokenByAssetId(id) { return TOKEN_BY_ID[id] || null; }
 
-  /* The 7 original curated routes, kept as quick-pick chips. */
+  /* The 7 original curated routes, kept as quick-pick chips, plus one
+     Robinhood route added 2026-11-14 (USDC Eth → USDG Hood). */
   var QUICK = [
     { label: 'USDC Eth → Base', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '1' },
     { label: 'USDC Base → Eth', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', usd: '1' },
@@ -227,6 +234,7 @@
     { label: 'NEAR → USDC Base', from: 'nep141:wrap.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '1' },
     { label: 'ETH → USDC Base', from: 'nep141:eth.omft.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '2' },
     { label: 'USDC Base → NEAR', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:wrap.near', usd: '1' },
+    { label: 'USDC Eth → USDG Hood', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:hood-0x5fc5360d0400a0fd4f2af552add042d716f1d168.omft.near', usd: '1' },
   ];
 
   var state = {
