@@ -156,11 +156,15 @@
     pol:    { label: 'Polygon',   kind: 'evm',  explorer: 'https://polygonscan.com/tx/' },
     sol:    { label: 'Solana',    kind: 'sol',  explorer: 'https://solscan.io/tx/' },
     hood:   { label: 'Robinhood', kind: 'evm',  explorer: 'https://robinhoodchain.blockscout.com/tx/' },
+    btc:    { label: 'Bitcoin',   kind: 'btc',  explorer: 'https://mempool.space/tx/' },
+    zec:    { label: 'Zcash',     kind: 'zec',  explorer: 'https://zcashblockexplorer.com/transactions/' },
   };
-  var CHAIN_ORDER = ['eth', 'base', 'near', 'arb', 'op', 'bsc', 'avax', 'gnosis', 'pol', 'sol', 'hood'];
+  var CHAIN_ORDER = ['eth', 'base', 'near', 'arb', 'op', 'bsc', 'avax', 'gnosis', 'pol', 'sol', 'hood', 'btc', 'zec'];
 
   /* ---------- tokens (curated from GET /v0/tokens, verified live 2026-11-13;
      Robinhood ('hood') added 2026-11-14, verified live the same day.
+     Bitcoin ('btc') and Zcash ('zec') added 2026-11-18, quotes verified live
+     both ways the same day (USDC Eth -> BTC/ZEC and BTC/ZEC -> USDC Eth).
      The API lists ~230 tokens; this is the sensible shortlist — the major
      tokens on each chain we can take deposits from and pay out to. Prices come
      from the live API at load time; assetIds and decimals are fixed here. ---------- */
@@ -219,13 +223,18 @@
     { chain: 'hood', symbol: 'WETH', assetId: 'nep141:hood-0x0bd7d308f8e1639fab988df18a8011f41eacad73.omft.near', decimals: 18 },
     { chain: 'hood', symbol: 'USDG', assetId: 'nep141:hood-0x5fc5360d0400a0fd4f2af552add042d716f1d168.omft.near', decimals: 6 },
     { chain: 'hood', symbol: 'USDe', assetId: 'nep141:hood-0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34.omft.near', decimals: 18 },
+    { chain: 'btc', symbol: 'BTC', assetId: 'nep141:btc.omft.near', decimals: 8 },
+    { chain: 'zec', symbol: 'ZEC', assetId: 'nep141:zec.omft.near', decimals: 8 },
   ];
   var TOKEN_BY_ID = {};
   TOKENS.forEach(function (t) { TOKEN_BY_ID[t.assetId] = t; });
   function tokenByAssetId(id) { return TOKEN_BY_ID[id] || null; }
 
   /* The 7 original curated routes, kept as quick-pick chips, plus one
-     Robinhood route added 2026-11-14 (USDC Eth → USDG Hood). */
+     Robinhood route added 2026-11-14 (USDC Eth → USDG Hood) and two
+     routes added 2026-11-18 (USDC Eth → native BTC / ZEC).
+     The BTC/ZEC chips use $10 because the bridge minimums are ~$5.42
+     (BTC) and ~$1.28 (ZEC) — a $1 chip would fail the quote. */
   var QUICK = [
     { label: 'USDC Eth → Base', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '1' },
     { label: 'USDC Base → Eth', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', usd: '1' },
@@ -235,6 +244,8 @@
     { label: 'ETH → USDC Base', from: 'nep141:eth.omft.near', to: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', usd: '2' },
     { label: 'USDC Base → NEAR', from: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', to: 'nep141:wrap.near', usd: '1' },
     { label: 'USDC Eth → USDG Hood', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:hood-0x5fc5360d0400a0fd4f2af552add042d716f1d168.omft.near', usd: '1' },
+    { label: 'USDC Eth → BTC', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:btc.omft.near', usd: '10' },
+    { label: 'USDC Eth → ZEC', from: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near', to: 'nep141:zec.omft.near', usd: '10' },
   ];
 
   var state = {
@@ -287,11 +298,18 @@
   var NEAR_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
   var NEAR_HEX_RE = /^[0-9a-f]{64}$/;
   var SOL_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  /* Bitcoin: bech32 bc1q/bc1p (42/62 chars) or legacy 1…/3… base58 (26–35).
+     Zcash transparent only: t1…/t3… base58, 35 chars. Shielded z-addresses
+     are NOT supported by the Intents bridge, so they are rejected here. */
+  var BTC_RE = /^(bc1[qp][0-9a-z]{38,58}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/i;
+  var ZEC_RE = /^t[13][a-km-zA-HJ-NP-Z1-9]{33}$/;
   function validAddress(addr, chain) {
     if (!addr) return false;
     var kind = CHAINS[chain].kind;
     if (kind === 'evm') return EVM_RE.test(addr.trim());
     if (kind === 'sol') return SOL_RE.test(addr.trim());
+    if (kind === 'btc') return BTC_RE.test(addr.trim());
+    if (kind === 'zec') return ZEC_RE.test(addr.trim());
     var a = addr.trim();
     return (a.length >= 2 && a.length <= 64 && NEAR_RE.test(a)) || NEAR_HEX_RE.test(a);
   }
@@ -299,11 +317,13 @@
     var kind = CHAINS[chain].kind;
     if (kind === 'evm') return '0x… (e.g. your wallet address)';
     if (kind === 'sol') return 'Solana address (base58, e.g. your wallet address)';
+    if (kind === 'btc') return 'Bitcoin address (bc1q…, 1… or 3…)';
+    if (kind === 'zec') return 'Zcash transparent address (t1… or t3… — shielded z-addresses are not supported)';
     return 'name.near (e.g. the recipient’s NEAR account)';
   }
   function looksLikeDepositAddress(addr) {
     var a = (addr || '').trim();
-    return EVM_RE.test(a) || SOL_RE.test(a) || NEAR_HEX_RE.test(a) ||
+    return EVM_RE.test(a) || SOL_RE.test(a) || BTC_RE.test(a) || ZEC_RE.test(a) || NEAR_HEX_RE.test(a) ||
       (a.length >= 2 && a.length <= 64 && NEAR_RE.test(a));
   }
 
@@ -728,6 +748,12 @@
   /* Friendly wording when the API simply cannot price a pair. */
   function pairError(e) {
     var msg = String(e && e.message || e);
+    /* The bridge reports its minimum in base units ("try at least 5418848"),
+       which means nothing to a reader — restate it in the sending token. */
+    var m = msg.match(/try at least (\d+)/i);
+    if (m && state.from) {
+      msg = msg.replace(/try at least \d+/i, 'try at least ' + fromBaseUnits(m[1], state.from.decimals) + ' ' + state.from.symbol);
+    }
     if (/quot|route|liquid|pair|not found|not supported|no swap|insufficient|amount/i.test(msg)) {
       return { title: 'This pair is not available.', hint: 'NEAR Intents could not price it — try another token or chain. Details: ' + msg };
     }
@@ -742,6 +768,7 @@
   function renderQuote(q) {
     var out = q.quote;
     $('qSend').textContent = out.amountInFormatted + ' ' + state.from.symbol + ' (' + fmtUsd(out.amountInUsd) + ')';
+    $('qMinIn').textContent = fromBaseUnits(out.minAmountIn, state.from.decimals) + ' ' + state.from.symbol + ' (smallest swap this route accepts)';
     $('qReceive').textContent = out.amountOutFormatted + ' ' + state.to.symbol + ' (' + fmtUsd(out.amountOutUsd) + ')';
     $('qMinOut').textContent = fromBaseUnits(out.minAmountOut, state.to.decimals) + ' ' + state.to.symbol + ' (worst case at 1% slippage)';
     var rate = parseFloat(out.amountOutFormatted) / parseFloat(out.amountInFormatted);

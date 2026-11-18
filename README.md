@@ -133,8 +133,8 @@ Real calls against the live 1-Click API:
   `1.99832 USDC ($2.00)` out, and the "To" panel fills in with the quoted
   receive amount. Switching to token mode converts the input to the token
   amount; typing `0.5` USDC shows `≈ $0.4998` underneath. The "From" menu
-  opens with 54 tokens in 11 chain groups; search filters the list; the ↓
-  button swaps the two panels; the 8 quick-route chips work as expected.
+  opens with 56 tokens in 13 chain groups; search filters the list; the ↓
+  button swaps the two panels; the 10 quick-route chips work as expected.
   An unquotable pair (BRETT on Base → GNO on Gnosis) returns `No liquidity
   available` from the API, and the page shows "This pair is not available —
   try another token or chain".
@@ -161,9 +161,9 @@ Real calls against the live 1-Click API:
   their own wallet. That is by design — the page never touches a key — but
   it means a full end-to-end swap requires funds and a wallet on the
   origin chain.
-- **Quotes are per-pair.** The picker offers 54 tokens across 11 chains
+- **Quotes are per-pair.** The picker offers 56 tokens across 13 chains
   (Ethereum, Base, NEAR, Arbitrum, Optimism, BNB Chain, Avalanche, Gnosis,
-  Polygon, Solana, Robinhood) — a curated shortlist of the major tokens from the ~230
+  Polygon, Solana, Robinhood, Bitcoin, Zcash) — a curated shortlist of the major tokens from the ~230
   the API lists, grouped by chain. Whether a given pair can be priced is
   up to the quote API; if it cannot, the page says so plainly. Adding a
   token is one entry in the `TOKENS` table in `app.js`.
