@@ -77,6 +77,10 @@
     } catch (e) { return null; }
   }
   function clearSavedSwap() {
+    /* Stop the beforeunload handler from re-saving the swap on the way out —
+       without this the deleted swap is written back before the reload and
+       comes straight back (the old "Start over does nothing" bug). */
+    persistReady = false;
     lsDel(SWAP_KEY);
     location.reload();
   }
@@ -1070,10 +1074,13 @@
   /* ---------- init ---------- */
   applySelection();
   setStep(1, true);
-  restoreSavedState();
+  var restored = restoreSavedState();
   loadPrices();
   persistReady = true;
-  saveState();
+  /* Only re-save when a swap was actually restored. Saving the untouched
+     defaults here would plant a phantom saved swap, and the next visit
+     would show the "Resumed your swap" banner for a swap nobody made. */
+  if (restored) saveState();
   /* Banner buttons: keep going where the restored swap left off, or wipe
      the saved swap and start clean. */
   $('btnResumeContinue').onclick = function () {
