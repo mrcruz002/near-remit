@@ -1019,6 +1019,14 @@
     return TERMINAL[status] === true;
   }
   function addTxLink(box, label, hash, explorer) {
+    /* The status API sometimes returns tx hashes as objects (e.g.
+       {hash: '0x...'}) instead of plain strings; a raw object rendered
+       here used to show as '[object Object]'. Normalise first. */
+    if (hash && typeof hash === 'object') {
+      hash = hash.hash || hash.txHash || hash.transactionHash || hash.tx_hash || '';
+    }
+    hash = String(hash || '');
+    if (!hash) return;
     var div = document.createElement('div');
     div.textContent = label;
     var a = document.createElement('a');
