@@ -42,12 +42,31 @@
      memo and tracking state. On load it is restored automatically and
      tracking resumes. "Start over" wipes it. Nothing leaves the browser. */
   var SWAP_KEY = 'nearremit-swap-v1';
+  var DEFAULT_FROM = 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near'; // USDC on Ethereum
+  var DEFAULT_TO = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'; // USDC on Base
   var persistReady = false; // false until init has restored (so init never overwrites a saved swap)
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
   function lsDel(k) { try { window.localStorage.removeItem(k); } catch (e) {} }
+  /* True when the page is sitting on its untouched defaults: default route,
+     $1, no addresses, no quote. There is nothing to resume, so this must
+     never be saved and must never show the resume banner. */
+  function isDefaultSwap() {
+    return !!(state.from && state.from.assetId === DEFAULT_FROM
+      && state.to && state.to.assetId === DEFAULT_TO
+      && state.amountMode === 'usd'
+      && $('amount').value === '1'
+      && !$('refundTo').value && !$('recipient').value
+      && !state.dryQuote && !state.liveQuote && maxStep <= 1);
+  }
   function saveState() {
     if (!persistReady) return;
+    /* Never persist the untouched defaults. The beforeunload handler calls
+       this on every page unload, and saving the defaults there is what made
+       the "Resumed your swap" banner come back after Start over with
+       nothing in it. If the state is back to defaults, delete any saved
+       swap instead. */
+    if (isDefaultSwap()) { lsDel(SWAP_KEY); return; }
     try {
       lsSet(SWAP_KEY, JSON.stringify({
         version: 1,
@@ -95,6 +114,16 @@
   function restoreSavedState() {
     var d = loadSavedState();
     if (!d) return false;
+    /* A saved entry that is exactly the untouched defaults is not a swap —
+       ignore it and delete it, so it stops coming back. The old hasAnything
+       check below could never catch this: saveState always wrote from/to,
+       so it was always true and every saved defaults entry showed the
+       banner. */
+    if (d.from === DEFAULT_FROM && d.to === DEFAULT_TO
+        && (!d.amountMode || d.amountMode === 'usd')
+        && (!d.amount || d.amount === '1')
+        && !d.refundTo && !d.recipient && !d.dryQuote && !d.liveQuote
+        && (!d.step || d.step <= 1)) { lsDel(SWAP_KEY); return false; }
     var hasAnything = !!(d.from || d.to || d.dryQuote || d.liveQuote || (d.amount && d.amount !== '1') || d.refundTo || d.recipient);
     if (!hasAnything) return false;
     if (d.from) { var f = tokenByAssetId(d.from); if (f) state.from = f; }
