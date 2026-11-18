@@ -61,6 +61,8 @@
         recipient: $('recipient').value,
         dryQuote: state.dryQuote,
         liveQuote: state.liveQuote,
+        routeMin: state.routeMin,
+        routeMinKey: state.routeMinKey,
         tracking: state.tracking
       }));
     } catch (e) {}
@@ -94,6 +96,7 @@
     if (d.from) { var f = tokenByAssetId(d.from); if (f) state.from = f; }
     if (d.to) { var t = tokenByAssetId(d.to); if (t) state.to = t; }
     if (d.amountMode === 'usd' || d.amountMode === 'token') state.amountMode = d.amountMode;
+    if (typeof d.routeMin === 'string' && typeof d.routeMinKey === 'string') { state.routeMin = d.routeMin; state.routeMinKey = d.routeMinKey; }
     if (typeof d.amount === 'string' && d.amount) $('amount').value = d.amount;
     if (typeof d.refundTo === 'string') $('refundTo').value = d.refundTo;
     if (typeof d.recipient === 'string') $('recipient').value = d.recipient;
@@ -258,6 +261,8 @@
     menuFor: null,      // 'from' | 'to' while the token menu is open
     dryQuote: null,     // last dry (price-only) quote response
     liveQuote: null,    // last live quote response (has depositAddress)
+    routeMin: null,     // smallest input this route accepts, in base units
+    routeMinKey: null,  // fromAssetId + '>' + toAssetId the routeMin belongs to
     pollTimer: null,
     tracking: null,     // depositAddress currently being polled
   };
@@ -745,6 +750,45 @@
     }
     return body;
   }
+  /* The quote's minAmountIn only echoes the amount typed, so it cannot show
+     the route's real floor. Learn the floor once per route by asking for a
+     quote of about $0.01 worth — the bridge refuses it with "try at least N",
+     which IS the floor. (A 1-base-unit probe is too small and gets a generic
+     refusal instead, so the probe uses a real, tiny amount.) Cached per route
+     pair; a failed probe leaves the row showing "—" rather than a wrong number. */
+  async function probeRouteMin() {
+    var key = state.from.assetId + '>' + state.to.assetId;
+    if (state.routeMinKey === key && state.routeMin) return state.routeMin;
+    var p = priceOf(state.from);
+    var probeBase;
+    if (p) {
+      var humanStr = (0.01 / p).toFixed(10).replace(/0+$/, '').replace(/\.$/, '');
+      probeBase = toBaseUnits(humanStr, state.from.decimals) || '10000';
+    } else {
+      probeBase = '10000';
+    }
+    var body = quoteBody(true);
+    body.amount = probeBase;
+    try {
+      var res = await fetchWithTimeout(API + '/v0/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      var b = await res.json().catch(function () { return {}; });
+      if (res.ok) {
+        state.routeMin = (b.quote && b.quote.minAmountIn) ? b.quote.minAmountIn : '1';
+      } else {
+        var m = String(b.message || b.error || '').match(/try at least (\d+)/i);
+        if (!m) return null;
+        state.routeMin = m[1];
+      }
+      state.routeMinKey = key;
+      return state.routeMin;
+    } catch (e) {
+      return null;
+    }
+  }
   /* Friendly wording when the API simply cannot price a pair. */
   function pairError(e) {
     var msg = String(e && e.message || e);
@@ -752,6 +796,8 @@
        which means nothing to a reader — restate it in the sending token. */
     var m = msg.match(/try at least (\d+)/i);
     if (m && state.from) {
+      state.routeMin = m[1];
+      state.routeMinKey = state.from.assetId + '>' + state.to.assetId;
       msg = msg.replace(/try at least \d+/i, 'try at least ' + fromBaseUnits(m[1], state.from.decimals) + ' ' + state.from.symbol);
     }
     if (/quot|route|liquid|pair|not found|not supported|no swap|insufficient|amount/i.test(msg)) {
@@ -768,7 +814,9 @@
   function renderQuote(q) {
     var out = q.quote;
     $('qSend').textContent = out.amountInFormatted + ' ' + state.from.symbol + ' (' + fmtUsd(out.amountInUsd) + ')';
-    $('qMinIn').textContent = fromBaseUnits(out.minAmountIn, state.from.decimals) + ' ' + state.from.symbol + ' (smallest swap this route accepts)';
+    $('qMinIn').textContent = (state.routeMinKey === state.from.assetId + '>' + state.to.assetId && state.routeMin)
+      ? fromBaseUnits(state.routeMin, state.from.decimals) + ' ' + state.from.symbol + ' (smallest swap this route accepts)'
+      : '—';
     $('qReceive').textContent = out.amountOutFormatted + ' ' + state.to.symbol + ' (' + fmtUsd(out.amountOutUsd) + ')';
     $('qMinOut').textContent = fromBaseUnits(out.minAmountOut, state.to.decimals) + ' ' + state.to.symbol + ' (worst case at 1% slippage)';
     var rate = parseFloat(out.amountOutFormatted) / parseFloat(out.amountInFormatted);
@@ -791,6 +839,7 @@
     var btn = $('btnQuote');
     btn.disabled = true; btn.textContent = 'Asking solvers…';
     try {
+      await probeRouteMin();
       var q = await requestQuote(true);
       state.dryQuote = q;
       renderQuote(q);
