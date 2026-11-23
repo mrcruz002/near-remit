@@ -1,7 +1,6 @@
 # NearRemit
 
-**Send money home, across chains.** A one-page cross-chain remittance
-application built as a personal project.
+**Send money home, across chains.** A one-page cross-chain remittance application built for the NEAR hackathon. The swap flow is live: the page calls the NEAR Intents 1-Click API directly from the browser, and a $1 USDC (Ethereum) → USDC (Base) swap has been verified end to end on mainnet.
 
 ## The problem
 
@@ -171,7 +170,7 @@ Real calls against the live 1-Click API:
   makes the quote endpoint hang instead of answering. The app omits the
   field, and quotes then return in about a second. The code comments this
   where the request is built.
-- **Small amounts.** The demo defaults to $1. Very small swaps can be
+- **Small amounts.** The page defaults to $1. Very small swaps can be
   uneconomic once network fees are counted; the quote shows the real
   numbers before anything is committed.
 
