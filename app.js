@@ -921,7 +921,7 @@
       'Valid until: ' + fmtDate(q.deadline),
       'Quote ref: ' + (state.liveQuote.correlationId || ''),
       'Track it: ' + trackUrl,
-      'Demo: ' + pageBaseUrl()
+      'Link: ' + pageBaseUrl()
     );
     return lines.join('\n');
   }
